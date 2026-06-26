@@ -54,6 +54,7 @@ The cask lives in this repo (`Casks/signal-agent.rb`). Tap the repo directly
 
 ```bash
 brew tap thepranky/signal https://github.com/thepranky/signal.git
+brew trust thepranky/signal
 brew install --cask signal-agent
 ```
 
@@ -66,6 +67,7 @@ If you previously installed the old `signal` cask from the deprecated
 brew uninstall --cask signal 2>/dev/null
 brew untap thepranky/signal 2>/dev/null
 brew tap thepranky/signal https://github.com/thepranky/signal.git
+brew trust thepranky/signal
 brew install --cask signal-agent
 ```
 
