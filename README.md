@@ -58,13 +58,16 @@ The recommended path for most people:
    - macOS Gatekeeper may warn about an unidentified developer on first launch.
      Right-click the app → **Open** → **Open** to bypass it once, or run
      `xattr -dr com.apple.quarantine /Applications/Signal.app`.
-3. Wire the hooks into Claude Code:
-   ```bash
-   git clone <your-fork-url> signal && cd signal
-   python3 install/install.py
-   ```
+3. Click **Set up Claude Code hooks** in the Signal menu. That's it — the app
+   bundles the hook script and wires it into your global Claude settings for
+   you (no terminal, no repo clone).
 4. (Optional) Add `Signal.app` to **System Settings → General → Login Items**
    so it starts automatically.
+
+Open a new Claude Code session in any interface and watch the circles light up.
+
+> Prefer the command line, or building from source? You can still run the
+> installer script manually: `python3 install/install.py`.
 
 ## Install (build from source)
 

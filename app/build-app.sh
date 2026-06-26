@@ -16,6 +16,8 @@ rm -rf "$APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 cp "$BIN_PATH" "$APP/Contents/MacOS/Signal"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
+# Bundle the hook script so the app can install hooks on first launch.
+cp ../hooks/signal_hook.py "$APP/Contents/Resources/signal_hook.py"
 
 echo "Done: $(pwd)/$APP"
 echo "Run it with: open $APP"

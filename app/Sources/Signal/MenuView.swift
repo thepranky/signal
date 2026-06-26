@@ -23,9 +23,31 @@ struct MenuBarLabel: View {
     }
 }
 
+/// Tracks whether Signal's Claude Code hooks are installed, for the setup banner.
+@MainActor
+final class HookState: ObservableObject {
+    @Published var installed: Bool = true
+    @Published var message: String?
+
+    func refresh() {
+        installed = HookInstaller.isInstalled()
+    }
+
+    func install() {
+        do {
+            try HookInstaller.install()
+            installed = true
+            message = "Hooks installed. Start a Claude Code session to begin tracking."
+        } catch {
+            message = error.localizedDescription
+        }
+    }
+}
+
 /// The panel shown when the menu bar item is clicked.
 struct MenuView: View {
     @ObservedObject var store: SessionStore
+    @StateObject private var hooks = HookState()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -39,6 +61,18 @@ struct MenuView: View {
             .padding(.bottom, 6)
 
             Divider()
+
+            if !hooks.installed {
+                SetupBanner(hooks: hooks)
+                Divider()
+            } else if let message = hooks.message {
+                Text(message)
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+                    .padding(.horizontal, 12)
+                    .padding(.vertical, 6)
+                Divider()
+            }
 
             if store.sessions.isEmpty {
                 Text("No active sessions")
@@ -66,6 +100,36 @@ struct MenuView: View {
             .padding(.vertical, 8)
         }
         .frame(width: 300)
+        .onAppear { hooks.refresh() }
+    }
+}
+
+/// Shown when Signal's hooks aren't yet wired into Claude Code. One click sets
+/// them up, so users never need a terminal or the install script.
+struct SetupBanner: View {
+    @ObservedObject var hooks: HookState
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 8) {
+            Text("Finish setup")
+                .font(.subheadline.weight(.semibold))
+            Text("Signal needs to add hooks to Claude Code so it can see your sessions.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+                .fixedSize(horizontal: false, vertical: true)
+            if let message = hooks.message {
+                Text(message)
+                    .font(.caption)
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+            Button("Set up Claude Code hooks") { hooks.install() }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+        }
+        .frame(maxWidth: .infinity, alignment: .leading)
+        .padding(.horizontal, 12)
+        .padding(.vertical, 10)
     }
 }
 

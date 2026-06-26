@@ -36,13 +36,19 @@ MANAGED_HOOKS = [
 
 
 def command_for(status: str) -> str:
-    return f"{HOOK_SCRIPT} {status}"
+    # /usr/bin/env avoids depending on the script's +x bit; quotes guard against
+    # spaces in the path. Matches the in-app installer (HookInstaller.swift).
+    return f'/usr/bin/env python3 "{HOOK_SCRIPT}" {status}'
 
 
 def is_signal_group(group: dict) -> bool:
-    """True if a matcher group was added by Signal (references our hook script)."""
+    """True if a matcher group was added by Signal (references our hook script).
+
+    Matches on the script's basename so this stays idempotent with the in-app
+    installer even if the two reference the script at different paths.
+    """
     for h in group.get("hooks", []):
-        if isinstance(h, dict) and HOOK_SCRIPT in str(h.get("command", "")):
+        if isinstance(h, dict) and "signal_hook.py" in str(h.get("command", "")):
             return True
     return False
 
