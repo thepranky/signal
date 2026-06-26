@@ -55,11 +55,12 @@ struct Session: Identifiable, Codable {
 
     var id: String { sessionId }
 
-    /// Human-friendly client tag for the UI, or nil when unknown/unset.
+    /// Human-friendly client tag shown in the UI only for non-default clients.
+    /// Claude CLI is the default/expected case and is unlabelled to reduce noise;
+    /// Cursor (and any future distinct clients) get an explicit tag.
     var sourceLabel: String? {
         switch source {
         case "cursor": return "Cursor"
-        case "claude_code": return "Claude CLI"
         default: return nil
         }
     }

@@ -1,35 +1,34 @@
+import AppKit
 import Foundation
 import ServiceManagement
 
-/// Wraps `SMAppService` so Signal can register itself as a Login Item with one
-/// toggle — no manual trip to System Settings. Requires macOS 13+ (already our
-/// minimum) and a code-signed bundle; the build ad-hoc signs for this reason.
-@MainActor
-final class LoginItem: ObservableObject {
-    @Published private(set) var enabled: Bool
-    @Published var errorMessage: String?
+/// Registers Signal as a Login Item via `SMAppService`. Requires macOS 13+
+/// (already our minimum) and a code-signed bundle; the build ad-hoc signs for
+/// this reason.
+enum LoginItem {
+    private static let askedKey = "SignalDidAskLoginItem"
 
-    init() {
-        enabled = SMAppService.mainApp.status == .enabled
-    }
-
-    func refresh() {
-        enabled = SMAppService.mainApp.status == .enabled
-    }
-
-    /// Registers/unregisters the main app as a login item. On failure it surfaces
-    /// a message and re-syncs the toggle to the real system state.
-    func set(_ on: Bool) {
-        do {
-            if on {
-                try SMAppService.mainApp.register()
-            } else {
-                try SMAppService.mainApp.unregister()
-            }
-            errorMessage = nil
-        } catch {
-            errorMessage = "Couldn't update login item: \(error.localizedDescription)"
+    /// Show a one-time "Start Signal at login?" prompt on first launch. No-ops
+    /// if the user was already asked or if Signal is already registered.
+    static func offerIfNeeded() {
+        guard !UserDefaults.standard.bool(forKey: askedKey) else { return }
+        guard SMAppService.mainApp.status != .enabled else {
+            UserDefaults.standard.set(true, forKey: askedKey)
+            return
         }
-        refresh()
+
+        UserDefaults.standard.set(true, forKey: askedKey)
+
+        let alert = NSAlert()
+        alert.messageText = "Start Signal at login?"
+        alert.informativeText = "Signal can launch automatically each time you log in "
+            + "so your Claude sessions are always tracked."
+        alert.addButton(withTitle: "Start at Login")
+        alert.addButton(withTitle: "Not Now")
+        NSApp.activate(ignoringOtherApps: true)
+
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+
+        try? SMAppService.mainApp.register()
     }
 }

@@ -16,10 +16,10 @@ struct SignalApp: App {
     }
 }
 
-/// Hosts launch-time housekeeping that has no natural home in the SwiftUI scene,
-/// such as offering to relocate the app into /Applications on first run.
+/// Hosts launch-time housekeeping that has no natural home in the SwiftUI scene.
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         AppRelocator.offerMoveToApplicationsIfNeeded()
+        LoginItem.offerIfNeeded()
     }
 }
