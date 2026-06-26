@@ -9,7 +9,7 @@ cask "signal" do
 
   # Signal is ad-hoc signed, not notarized; let Homebrew clear quarantine.
   auto_updates false
-  depends_on macos: ">= :ventura"
+  depends_on macos: :ventura
 
   app "Signal.app"
 
