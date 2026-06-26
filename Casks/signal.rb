@@ -1,10 +1,10 @@
 cask "signal" do
-  version "0.1.4"
-  sha256 "5a2b788594d27e58fe2b469bc36f4a61627e2831a565d49427cd6e4d04ef8cd4"
+  version "0.1.5"
+  sha256 "0f5bc5d2559e4658fd81e9820d6946579af5b3c22c5c867dadda765b0f05a128"
 
   url "https://github.com/thepranky/signal/releases/download/v#{version}/Signal-v#{version}.dmg"
   name "Signal"
-  desc "Menu bar traffic-light monitor for Claude Code sessions"
+  desc "Menu bar traffic-light monitor for AI coding agent sessions"
   homepage "https://github.com/thepranky/signal"
 
   # Signal is ad-hoc signed, not notarized; let Homebrew clear quarantine.
@@ -15,7 +15,7 @@ cask "signal" do
 
   caveats <<~EOS
     Signal is a menu bar app (no Dock icon). After installing, click its icon
-    in the menu bar (top-right), then "Set up Claude Code hooks" to begin
-    tracking your sessions.
+    in the menu bar (top-right), then "Set up hooks" to begin tracking your
+    agent sessions.
   EOS
 end
