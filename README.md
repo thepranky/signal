@@ -1,23 +1,24 @@
 # Signal
 
-A lightweight macOS menu bar app that monitors all your active **Claude Code**
-sessions with a traffic-light system — across the terminal CLI, the VS Code
-extension, the Claude desktop app, and Cursor's agent, all at once. Each session
-shows an excerpt of its first prompt and a tag for the client it came from.
+A lightweight macOS menu bar app that monitors all your active **AI coding
+agent** sessions with a traffic-light system — across the Claude Code
+CLI, Claude desktop app, Cursor's agent, and the VS Code extension, all at
+once. Each session shows an excerpt of its first prompt and a tag for the client
+it came from.
 
 Each session gets its own colored circle:
 
-- 🔴 **Red** — Claude is actively running and doing work.
-- 🟡 **Yellow** — Claude is blocked, waiting for your approval (a permission prompt).
-- 🟢 **Green** — Claude finished its turn and is idle.
+- 🔴 **Red** — the agent is actively running and doing work.
+- 🟡 **Yellow** — the agent is blocked, waiting for your approval (a permission prompt).
+- 🟢 **Green** — the agent finished its turn and is idle.
 
 When a session ends, its circle disappears.
 
 ## How it works
 
 ```
-Claude Code (any interface)
-   │  global hooks in ~/.claude/settings.json
+Claude Code + Cursor
+   │  
    ▼
 signal_hook.py   ──writes──▶   ~/.signal/sessions/<session_id>.json
                                         │  watched by
@@ -25,7 +26,7 @@ signal_hook.py   ──writes──▶   ~/.signal/sessions/<session_id>.json
                               Signal.app (menu bar)  →  🔴🟡🟢
 ```
 
-1. **Hooks** — Claude Code lifecycle events write each session's status to a JSON file in `~/.signal/sessions/`.
+1. **Hooks** — agent lifecycle events write each session's status to a JSON file in `~/.signal/sessions/`.
 2. **Menu bar app** — watches that directory and shows one circle per live session.
 
 Plain JSON on disk — no daemon, no network.
@@ -33,11 +34,7 @@ Plain JSON on disk — no daemon, no network.
 ## Requirements
 
 - macOS 13 or later.
-- [Claude Code](https://claude.com/claude-code) installed.
-- Python 3 (ships with macOS) for the hook handler and installer.
-- **To build the app from source:** Xcode (free, from the App Store). The
-  Command Line Tools alone are not enough — `MenuBarExtra` needs the macOS 13+
-  SDK. **You do _not_ need Xcode to just run a downloaded build.**
+- [Claude Code](https://claude.com/claude-code) and/or [Cursor](https://cursor.com) installed.
 
 ## Install (Option 1: one line — recommended)
 
@@ -46,7 +43,7 @@ curl -fsSL https://raw.githubusercontent.com/thepranky/signal/master/scripts/ins
 ```
 
 This grabs the latest release, installs `Signal.app` into `/Applications`, and
-launches it. Then click **Set up Claude Code hooks** in the menu.
+launches it. Then click **Set up hooks** in the menu.
 
 To update, run the same command again.
 
@@ -66,7 +63,7 @@ Same setup step in the menu. To update: `brew upgrade --cask signal`.
    ```bash
    xattr -dr com.apple.quarantine /Applications/Signal.app
    ```
-4. Click the menu bar icon (top-right, near the clock) → **Set up Claude Code hooks**.
+4. Click the menu bar icon (top-right, near the clock) → **Set up hooks**.
 
 ## Install (Option 4: build from source)
 
@@ -91,42 +88,42 @@ python3 install/install.py --dry-run
 python3 install/install.py --uninstall
 ```
 
-This removes only Signal's hooks and leaves the rest of your Claude settings
-untouched.
+This removes only Signal's hooks and leaves the rest of your Claude Code and
+Cursor settings untouched.
 
 ## Status mapping
 
-| Color | Meaning | Claude Code event(s) |
-|-------|---------|----------------------|
-| 🔴 Red | Actively running | `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure` |
-| 🟡 Yellow | Waiting for your approval | `Notification` (`permission_prompt`), `PermissionRequest` |
-| 🟢 Green | Finished turn, idle | `Stop`, `StopFailure` |
-| (no circle) | Session ended | `SessionEnd`, or staleness timeout |
+| Color | Meaning | Claude Code event(s) | Cursor event(s) |
+|-------|---------|----------------------|-----------------|
+| 🔴 Red | Actively running | `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure` | `beforeSubmitPrompt`, `preToolUse`, `postToolUse`, `postToolUseFailure` |
+| 🟡 Yellow | Waiting for your approval | `Notification` (`permission_prompt`), `PermissionRequest` | — |
+| 🟢 Green | Finished turn, idle | `Stop`, `StopFailure` | `stop` |
+| (no circle) | Session ended | `SessionEnd`, or staleness timeout | `sessionEnd`, or staleness timeout |
 
 The installed hooks are copied to a stable `~/.signal/signal_hook.py` and tagged
 with a `SIGNAL_HOOK=1` marker, so moving the app/repo doesn't break them and
 uninstalling only ever removes Signal's own hooks.
 
-> **Note:** Claude Code cannot natively distinguish "finished the whole task"
-> from "finished by asking you a clarifying question" — both just end a turn, so
-> both show green. Only permission prompts surface as a distinct "waiting"
-> (yellow) state.
+> **Note:** agents can't natively distinguish "finished the whole task" from
+> "finished by asking you a clarifying question" — both just end a turn, so both
+> show green. Only Claude Code permission prompts surface as a distinct "waiting"
+> (yellow) state; Cursor has no equivalent event, so Cursor sessions go red →
+> green only.
 
 ## Which sessions are tracked
 
-Signal sees any client that fires Claude Code's hooks through your global
-`~/.claude/settings.json` — including the **terminal CLI, the VS Code
-extension, the Claude desktop app, and Cursor's agent**. Each session is shown
-with a short excerpt of its first prompt, plus a client tag for everything
-except the plain CLI (the common case, left untagged to reduce noise):
+Signal installs hooks into both Claude Code's global `~/.claude/settings.json`
+and Cursor's native `~/.cursor/hooks.json`, so it tracks the **terminal CLI, the
+VS Code extension, the Claude desktop app, and Cursor's agent**. Each session is
+shown with a short excerpt of its first prompt, plus a client tag:
 
-- **Cursor** — Cursor's built-in agent (transcripts under `~/.cursor/...`).
+- **Claude** — the Claude Code CLI.
+- **Cursor** — Cursor's built-in agent.
 - **VS Code** / **Claude Desktop** — detected from the transcript's
   `entrypoint` field.
-- *(no tag)* — the plain Claude Code CLI.
 
 Cursor's hook events don't include a working directory, so Signal falls back to
-the project encoded in the transcript path to label them.
+the workspace root (or the project encoded in the transcript path) to label them.
 
 ## Configuration
 
@@ -179,7 +176,7 @@ CI runs these on every push and before every release.
 ```
 signal/
 ├── hooks/signal_hook.py     # records session status to a state file (stdlib only)
-├── install/install.py       # merges hooks into ~/.claude/settings.json
+├── install/install.py       # merges hooks into ~/.claude/settings.json + ~/.cursor/hooks.json
 ├── tests/test_signal_hook.py
 ├── app/                     # SwiftUI MenuBarExtra menu bar app
 │   ├── Package.swift

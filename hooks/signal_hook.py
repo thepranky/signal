@@ -1,21 +1,22 @@
 #!/usr/bin/env python3
-"""Signal hook handler for Claude Code.
+"""Signal hook handler for AI coding agents.
 
-Invoked by Claude Code hooks. Reads the hook event JSON from stdin and records
-the session's current traffic-light status into a per-session state file that
-the Signal menu bar app watches.
+Invoked by Claude Code's hook system — fired by the Claude Code CLI, the VS Code
+and Claude Desktop apps, and Cursor's agent. Reads the hook event JSON from
+stdin and records the session's current traffic-light status into a per-session
+state file that the Signal menu bar app watches.
 
 Usage:
     signal_hook.py <status>
 
 Where <status> is one of:
-    running  - Claude is actively working (UserPromptSubmit / Pre|PostToolUse)
-    waiting  - Claude is blocked waiting for your approval (permission prompt)
-    done     - Claude finished its turn and is idle (Stop)
+    running  - the agent is actively working (UserPromptSubmit / Pre|PostToolUse)
+    waiting  - the agent is blocked waiting for your approval (permission prompt)
+    done     - the agent finished its turn and is idle (Stop)
     end      - the session terminated; remove its state file (SessionEnd)
 
 The handler is intentionally dependency-free (stdlib only) and fails quietly:
-a hook must never disrupt the Claude Code session it is observing.
+a hook must never disrupt the session it is observing.
 """
 
 import json
@@ -100,20 +101,38 @@ def project_from_transcript(transcript_path: str) -> str:
     return enc
 
 
-def session_source(transcript_path: str, entrypoint: str = "") -> str:
+def session_source(transcript_path: str, entrypoint: str = "",
+                   is_cursor: bool = False) -> str:
     """Identify which client produced the session.
 
-    Cursor uses its own transcript tree, so the path is authoritative there.
-    For Claude Code we prefer the transcript's `entrypoint` field (cli / vscode
-    / claude-desktop), falling back to the path. Returns one of "cursor",
-    "vscode", "claude_desktop", "cli", or "" (unknown).
+    Cursor's own hooks carry a `cursor_version` field, which is the most
+    reliable signal (it survives even when transcripts are disabled); its
+    transcript tree is a secondary heuristic. For Claude Code we prefer the
+    transcript's `entrypoint` field (cli / vscode / claude-desktop), falling
+    back to the path. Returns one of "cursor", "vscode", "claude_desktop",
+    "cli", or "" (unknown).
     """
+    if is_cursor:
+        return "cursor"
     if transcript_path and f"{os.sep}.cursor{os.sep}" in transcript_path:
         return "cursor"
     if entrypoint:
         return ENTRYPOINT_SOURCES.get(entrypoint, "cli")
     if transcript_path and f"{os.sep}.claude{os.sep}" in transcript_path:
         return "cli"
+    return ""
+
+
+def first_workspace_root(event: dict) -> str:
+    """Cursor hooks omit `cwd` on most events but provide `workspace_roots`
+    (the open folders). Use the first one as the working directory so Cursor
+    sessions get a real project name instead of falling back to "unknown".
+    """
+    roots = event.get("workspace_roots")
+    if isinstance(roots, list):
+        for root in roots:
+            if isinstance(root, str) and root:
+                return root
     return ""
 
 
@@ -227,7 +246,11 @@ def main() -> int:
     status = sys.argv[1]
     event = read_event()
 
-    session_id = str(event.get("session_id") or "unknown")
+    # Claude Code events carry `session_id`; Cursor events carry
+    # `conversation_id` (stable across turns) on every event but only expose
+    # `session_id` on sessionStart/sessionEnd, where the two are equal. Falling
+    # back to `conversation_id` keeps every Cursor event mapped to one file.
+    session_id = str(event.get("session_id") or event.get("conversation_id") or "unknown")
     directory = state_dir()
 
     try:
@@ -244,7 +267,7 @@ def main() -> int:
             pass
         return 0
 
-    cwd = event.get("cwd") or ""
+    cwd = event.get("cwd") or first_workspace_root(event)
     transcript_path = event.get("transcript_path") or ""
     meta = read_transcript_meta(transcript_path)
     payload = {
@@ -254,7 +277,8 @@ def main() -> int:
         "title": meta["title"],
         "cwd": cwd,
         "transcript_path": transcript_path,
-        "source": session_source(transcript_path, meta["entrypoint"]),
+        "source": session_source(transcript_path, meta["entrypoint"],
+                                 is_cursor=bool(event.get("cursor_version"))),
         "updated_at": time.time(),
     }
 

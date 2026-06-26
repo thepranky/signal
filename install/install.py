@@ -1,8 +1,12 @@
 #!/usr/bin/env python3
-"""Install (or uninstall) Signal's Claude Code hooks.
+"""Install (or uninstall) Signal's hooks.
 
-Merges Signal's traffic-light hooks into ~/.claude/settings.json without
-clobbering any hooks you already have. Re-running is safe and idempotent.
+Merges Signal's traffic-light hooks into both Claude Code's
+~/.claude/settings.json (used by the Claude Code CLI, VS Code, and Claude
+Desktop) and Cursor's native ~/.cursor/hooks.json, without clobbering any hooks
+you already have. Installing Cursor's native hooks means Cursor tracking doesn't
+depend on Cursor's optional Claude-compatibility bridge. Re-running is safe and
+idempotent.
 
 Usage:
     python3 install/install.py            # install / update
@@ -21,6 +25,9 @@ import time
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 SOURCE_HOOK = os.path.join(REPO_ROOT, "hooks", "signal_hook.py")
 SETTINGS_PATH = os.path.expanduser("~/.claude/settings.json")
+# Cursor's native hooks file, so Cursor tracking doesn't rely on Cursor's
+# optional Claude-compatibility bridge being enabled.
+CURSOR_SETTINGS_PATH = os.path.expanduser("~/.cursor/hooks.json")
 SIGNAL_HOME = os.path.expanduser("~/.signal")
 STATE_DIR = os.path.join(SIGNAL_HOME, "sessions")
 # The hook is copied to a stable location so the installed commands keep working
@@ -31,7 +38,7 @@ INSTALLED_HOOK = os.path.join(SIGNAL_HOME, "signal_hook.py")
 # safely remove only our own hooks.
 MARKER = "SIGNAL_HOOK=1"
 
-# event name -> (matcher or None, status arg)
+# Claude Code hooks: event name -> (matcher or None, status arg)
 MANAGED_HOOKS = [
     ("UserPromptSubmit", None, "running"),
     ("PreToolUse", "*", "running"),
@@ -42,6 +49,18 @@ MANAGED_HOOKS = [
     ("Stop", None, "done"),
     ("StopFailure", None, "done"),
     ("SessionEnd", None, "end"),
+]
+
+# Cursor's native hooks: event name -> status arg. Cursor has no equivalent to
+# Claude's permission-prompt event, so Cursor sessions only go running -> done
+# (never "waiting"/yellow). Matchers are omitted so tool hooks fire for all tools.
+MANAGED_CURSOR_HOOKS = [
+    ("beforeSubmitPrompt", "running"),
+    ("preToolUse", "running"),
+    ("postToolUse", "running"),
+    ("postToolUseFailure", "running"),
+    ("stop", "done"),
+    ("sessionEnd", "end"),
 ]
 
 
@@ -59,15 +78,20 @@ def is_signal_group(group: dict) -> bool:
     return False
 
 
-def load_settings() -> dict:
-    if not os.path.exists(SETTINGS_PATH):
+def is_signal_cursor_entry(entry: dict) -> bool:
+    """True if a Cursor hook entry (flat `{command}`) was added by Signal."""
+    return isinstance(entry, dict) and MARKER in str(entry.get("command", ""))
+
+
+def load_settings(path: str) -> dict:
+    if not os.path.exists(path):
         return {}
     try:
-        with open(SETTINGS_PATH) as f:
+        with open(path) as f:
             data = json.load(f)
         return data if isinstance(data, dict) else {}
     except (ValueError, OSError):
-        print(f"warning: could not parse {SETTINGS_PATH}; refusing to overwrite.",
+        print(f"warning: could not parse {path}; refusing to overwrite.",
               file=sys.stderr)
         sys.exit(1)
 
@@ -90,6 +114,24 @@ def strip_signal_hooks(settings: dict) -> None:
         settings.pop("hooks", None)
 
 
+def strip_signal_cursor_hooks(settings: dict) -> None:
+    """Remove every Signal-managed entry from a Cursor hooks file."""
+    hooks = settings.get("hooks")
+    if not isinstance(hooks, dict):
+        return
+    for event in list(hooks.keys()):
+        entries = hooks.get(event)
+        if not isinstance(entries, list):
+            continue
+        kept = [e for e in entries if not is_signal_cursor_entry(e)]
+        if kept:
+            hooks[event] = kept
+        else:
+            del hooks[event]
+    if not hooks:
+        settings.pop("hooks", None)
+
+
 def add_signal_hooks(settings: dict) -> None:
     hooks = settings.setdefault("hooks", {})
     for event, matcher, status in MANAGED_HOOKS:
@@ -97,6 +139,13 @@ def add_signal_hooks(settings: dict) -> None:
         if matcher is not None:
             group["matcher"] = matcher
         hooks.setdefault(event, []).append(group)
+
+
+def add_signal_cursor_hooks(settings: dict) -> None:
+    settings.setdefault("version", 1)
+    hooks = settings.setdefault("hooks", {})
+    for event, status in MANAGED_CURSOR_HOOKS:
+        hooks.setdefault(event, []).append({"command": command_for(status)})
 
 
 def backup(path: str) -> None:
@@ -111,16 +160,16 @@ def make_executable(path: str) -> None:
     os.chmod(path, st.st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
 
 
-def write_settings(settings: dict) -> None:
-    os.makedirs(os.path.dirname(SETTINGS_PATH), exist_ok=True)
-    backup(SETTINGS_PATH)
-    with open(SETTINGS_PATH, "w") as f:
+def write_settings(path: str, settings: dict) -> None:
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    backup(path)
+    with open(path, "w") as f:
         json.dump(settings, f, indent=2)
         f.write("\n")
 
 
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Install Signal's Claude Code hooks.")
+    parser = argparse.ArgumentParser(description="Install Signal's hooks.")
     parser.add_argument("--uninstall", action="store_true",
                         help="remove Signal's hooks and exit")
     parser.add_argument("--dry-run", action="store_true",
@@ -131,31 +180,47 @@ def main() -> int:
         print(f"error: hook script not found at {SOURCE_HOOK}", file=sys.stderr)
         return 1
 
-    settings = load_settings()
-    strip_signal_hooks(settings)  # always clear stale entries first (idempotent)
+    # Always clear stale entries first so the operation is idempotent.
+    settings = load_settings(SETTINGS_PATH)
+    strip_signal_hooks(settings)
+    cursor = load_settings(CURSOR_SETTINGS_PATH)
+    strip_signal_cursor_hooks(cursor)
 
     if args.uninstall:
         if args.dry_run:
+            print(f"# {SETTINGS_PATH}")
             print(json.dumps(settings, indent=2))
+            print(f"# {CURSOR_SETTINGS_PATH}")
+            print(json.dumps(cursor, indent=2))
         else:
-            write_settings(settings)
+            write_settings(SETTINGS_PATH, settings)
+            # Only rewrite Cursor's file if it already exists; never create an
+            # empty one for users who never had Cursor hooks.
+            if os.path.exists(CURSOR_SETTINGS_PATH):
+                write_settings(CURSOR_SETTINGS_PATH, cursor)
             print("Signal hooks removed.")
         return 0
 
     add_signal_hooks(settings)
+    add_signal_cursor_hooks(cursor)
 
     if args.dry_run:
+        print(f"# {SETTINGS_PATH}")
         print(json.dumps(settings, indent=2))
+        print(f"# {CURSOR_SETTINGS_PATH}")
+        print(json.dumps(cursor, indent=2))
         return 0
 
     # Copy the hook to its stable home so installed commands survive a moved repo.
     os.makedirs(STATE_DIR, exist_ok=True)
     shutil.copy2(SOURCE_HOOK, INSTALLED_HOOK)
     make_executable(INSTALLED_HOOK)
-    write_settings(settings)
+    write_settings(SETTINGS_PATH, settings)
+    write_settings(CURSOR_SETTINGS_PATH, cursor)
     print(f"Signal hooks installed into {SETTINGS_PATH}")
+    print(f"Cursor hooks installed into {CURSOR_SETTINGS_PATH}")
     print(f"State directory: {STATE_DIR}")
-    print("Open a new Claude Code session (any interface) to start tracking.")
+    print("Open a new session in Claude Code or Cursor to start tracking.")
     return 0
 
 

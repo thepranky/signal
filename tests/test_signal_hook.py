@@ -125,7 +125,7 @@ class HookTestCase(unittest.TestCase):
 
     def test_claude_cli_source_from_path_without_entrypoint(self):
         # A ~/.claude transcript path that doesn't exist on disk falls back to
-        # the path heuristic, which is the (unlabelled) plain CLI.
+        # the path heuristic, which is the plain Claude Code CLI.
         transcript = os.path.expanduser(
             "~/.claude/projects/-Users-bob-my-app/sess.jsonl")
         self.run_hook("running", {
@@ -144,6 +144,51 @@ class HookTestCase(unittest.TestCase):
             "transcript_path": "/tmp/whatever.jsonl",
         })
         self.assertEqual(self.state("x1")["source"], "")
+
+    # --- Cursor's native hook payload shape -------------------------------
+
+    def test_cursor_conversation_id_used_when_no_session_id(self):
+        # Cursor's per-tool events carry `conversation_id`, not `session_id`.
+        # Falling back to it keeps every event for a turn in one state file.
+        self.run_hook("running", {
+            "conversation_id": "conv-123",
+            "cursor_version": "1.7.2",
+            "workspace_roots": ["/Users/alice/code/widget"],
+        })
+        self.assertEqual(self.files(), ["conv-123.json"])
+        data = self.state("conv-123")
+        self.assertEqual(data["session_id"], "conv-123")
+        self.assertEqual(data["source"], "cursor")
+        self.assertEqual(data["project"], "widget")
+
+    def test_cursor_version_tags_source_without_transcript(self):
+        # No transcript path at all, but the cursor_version field is enough.
+        self.run_hook("running", {
+            "conversation_id": "conv-9",
+            "cursor_version": "1.7.2",
+        })
+        self.assertEqual(self.state("conv-9")["source"], "cursor")
+
+    def test_cursor_session_end_removes_file_by_conversation_id(self):
+        # sessionEnd provides session_id (== conversation_id); the running
+        # events used conversation_id, so the filenames must line up.
+        self.run_hook("running", {
+            "conversation_id": "conv-7",
+            "cursor_version": "1.7.2",
+            "workspace_roots": ["/p/app"],
+        })
+        self.assertEqual(self.files(), ["conv-7.json"])
+        self.run_hook("end", {"session_id": "conv-7"})
+        self.assertEqual(self.files(), [])
+
+    def test_session_id_preferred_over_conversation_id(self):
+        # When both are present, the explicit session_id wins.
+        self.run_hook("running", {
+            "session_id": "real",
+            "conversation_id": "other",
+            "cwd": "/p/app",
+        })
+        self.assertEqual(self.files(), ["real.json"])
 
     # --- title + entrypoint extracted from the transcript -----------------
 

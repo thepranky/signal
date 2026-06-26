@@ -53,5 +53,5 @@ open "$DEST/$APP"
 cat <<'EOF'
 
 Signal is installed. Look for its icon in the menu bar (top-right).
-Click it, then "Set up Claude Code hooks" to start tracking sessions.
+Click it, then "Set up hooks" to start tracking your agent sessions.
 EOF

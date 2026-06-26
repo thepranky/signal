@@ -1,8 +1,9 @@
 import Foundation
 
-/// Installs, detects, and removes Signal's Claude Code hooks by editing the
-/// user's global ~/.claude/settings.json. This mirrors install/install.py so a
-/// downloaded app can set itself up with one click, no terminal or repo clone.
+/// Installs, detects, and removes Signal's hooks by editing the user's global
+/// ~/.claude/settings.json — the hook system that Claude Code (CLI, VS Code,
+/// Claude Desktop) and Cursor's agent all fire. This mirrors install/install.py
+/// so a downloaded app can set itself up with one click, no terminal or repo clone.
 enum HookInstaller {
 
     enum InstallError: LocalizedError {
@@ -15,15 +16,16 @@ enum HookInstaller {
             case .hookScriptMissing:
                 return "The bundled hook script is missing from Signal.app."
             case .settingsUnreadable:
-                return "~/.claude/settings.json exists but isn't valid JSON. "
-                     + "Fix or remove it, then try again — Signal won't overwrite it."
+                return "A hooks settings file (~/.claude/settings.json or "
+                     + "~/.cursor/hooks.json) exists but isn't valid JSON. Fix or "
+                     + "remove it, then try again — Signal won't overwrite it."
             case .writeFailed(let why):
                 return "Could not update settings: \(why)"
             }
         }
     }
 
-    /// event name, matcher (nil = none), status argument passed to the hook.
+    /// Claude Code hooks: event name, matcher (nil = none), status argument.
     private static let managed: [(event: String, matcher: String?, status: String)] = [
         ("UserPromptSubmit", nil, "running"),
         ("PreToolUse", "*", "running"),
@@ -36,6 +38,19 @@ enum HookInstaller {
         ("SessionEnd", nil, "end"),
     ]
 
+    /// Cursor's native hooks: event name + status argument. Cursor has no event
+    /// equivalent to Claude's permission prompt, so Cursor sessions never enter
+    /// the "waiting" (yellow) state — only running → done. Matchers are omitted
+    /// so the tool-use hooks fire for every tool.
+    private static let managedCursor: [(event: String, status: String)] = [
+        ("beforeSubmitPrompt", "running"),
+        ("preToolUse", "running"),
+        ("postToolUse", "running"),
+        ("postToolUseFailure", "running"),
+        ("stop", "done"),
+        ("sessionEnd", "end"),
+    ]
+
     /// Unique token embedded in every command we install, so we identify and
     /// remove only our own hooks (never a user's unrelated hook).
     private static let marker = "SIGNAL_HOOK=1"
@@ -43,6 +58,14 @@ enum HookInstaller {
     static var settingsURL: URL {
         FileManager.default.homeDirectoryForCurrentUser
             .appendingPathComponent(".claude/settings.json")
+    }
+
+    /// Cursor's native user-level hooks file. Installing here means Cursor
+    /// tracking no longer depends on Cursor's optional Claude-compatibility
+    /// bridge being enabled.
+    static var cursorSettingsURL: URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".cursor/hooks.json")
     }
 
     private static var signalHome: URL {
@@ -66,13 +89,29 @@ enum HookInstaller {
 
     // MARK: - Detection / repair
 
-    /// True if any Signal-managed hook is present in the settings file.
+    /// True only when Signal is wired into both Claude Code and Cursor, so an
+    /// existing Claude-only install is re-offered the one-click setup to add the
+    /// Cursor hooks.
     static func isInstalled() -> Bool {
-        guard let settings = try? loadSettings(),
+        isClaudeInstalled() && isCursorInstalled()
+    }
+
+    private static func isClaudeInstalled() -> Bool {
+        guard let settings = try? loadSettings(at: settingsURL),
               let hooks = settings["hooks"] as? [String: Any] else { return false }
         for groups in hooks.values {
             guard let groups = groups as? [[String: Any]] else { continue }
             if groups.contains(where: isSignalGroup) { return true }
+        }
+        return false
+    }
+
+    private static func isCursorInstalled() -> Bool {
+        guard let settings = try? loadSettings(at: cursorSettingsURL),
+              let hooks = settings["hooks"] as? [String: Any] else { return false }
+        for entries in hooks.values {
+            guard let entries = entries as? [[String: Any]] else { continue }
+            if entries.contains(where: isSignalCursorEntry) { return true }
         }
         return false
     }
@@ -90,7 +129,7 @@ enum HookInstaller {
     static func install() throws {
         guard bundledHookScript != nil else { throw InstallError.hookScriptMissing }
 
-        var settings = try loadSettings()
+        var settings = try loadSettings(at: settingsURL)
         stripSignalHooks(&settings)
 
         var hooks = (settings["hooks"] as? [String: Any]) ?? [:]
@@ -106,13 +145,41 @@ enum HookInstaller {
         settings["hooks"] = hooks
 
         try copyHookToStableLocation()
-        try writeSettings(settings)
+        try writeSettings(settings, to: settingsURL)
+        try installCursorHooks()
+    }
+
+    /// Merge Signal's hooks into Cursor's native `~/.cursor/hooks.json`. Cursor
+    /// uses a flatter shape than Claude (each event maps to an array of
+    /// `{ "command": ... }` entries) and a top-level schema `version`.
+    private static func installCursorHooks() throws {
+        var settings = try loadSettings(at: cursorSettingsURL)
+        stripCursorSignalHooks(&settings)
+
+        if settings["version"] == nil { settings["version"] = 1 }
+        var hooks = (settings["hooks"] as? [String: Any]) ?? [:]
+        for entry in managedCursor {
+            var entries = (hooks[entry.event] as? [[String: Any]]) ?? []
+            entries.append(["command": command(for: entry.status)])
+            hooks[entry.event] = entries
+        }
+        settings["hooks"] = hooks
+
+        try writeSettings(settings, to: cursorSettingsURL)
     }
 
     static func uninstall() throws {
-        var settings = try loadSettings()
+        var settings = try loadSettings(at: settingsURL)
         stripSignalHooks(&settings)
-        try writeSettings(settings)
+        try writeSettings(settings, to: settingsURL)
+
+        // Only rewrite Cursor's file if it already exists, so uninstalling
+        // never creates an empty hooks.json for users who never had Cursor.
+        if FileManager.default.fileExists(atPath: cursorSettingsURL.path) {
+            var cursor = try loadSettings(at: cursorSettingsURL)
+            stripCursorSignalHooks(&cursor)
+            try writeSettings(cursor, to: cursorSettingsURL)
+        }
     }
 
     // MARK: - Helpers
@@ -120,6 +187,11 @@ enum HookInstaller {
     private static func isSignalGroup(_ group: [String: Any]) -> Bool {
         guard let hooks = group["hooks"] as? [[String: Any]] else { return false }
         return hooks.contains { ($0["command"] as? String)?.contains(marker) ?? false }
+    }
+
+    /// A Cursor hook entry is a flat `{ "command": ... }`; ours carries the marker.
+    private static func isSignalCursorEntry(_ entry: [String: Any]) -> Bool {
+        (entry["command"] as? String)?.contains(marker) ?? false
     }
 
     private static func stripSignalHooks(_ settings: inout [String: Any]) {
@@ -134,10 +206,21 @@ enum HookInstaller {
         else { settings["hooks"] = hooks }
     }
 
+    private static func stripCursorSignalHooks(_ settings: inout [String: Any]) {
+        guard var hooks = settings["hooks"] as? [String: Any] else { return }
+        for (event, value) in hooks {
+            guard let entries = value as? [[String: Any]] else { continue }
+            let kept = entries.filter { !isSignalCursorEntry($0) }
+            if kept.isEmpty { hooks.removeValue(forKey: event) }
+            else { hooks[event] = kept }
+        }
+        if hooks.isEmpty { settings.removeValue(forKey: "hooks") }
+        else { settings["hooks"] = hooks }
+    }
+
     /// Returns the parsed settings, an empty dict if the file is absent, or
     /// throws if the file exists but can't be parsed (so we never overwrite it).
-    private static func loadSettings() throws -> [String: Any] {
-        let url = settingsURL
+    private static func loadSettings(at url: URL) throws -> [String: Any] {
         guard FileManager.default.fileExists(atPath: url.path) else { return [:] }
         guard let data = try? Data(contentsOf: url) else {
             throw InstallError.settingsUnreadable
@@ -165,8 +248,7 @@ enum HookInstaller {
         }
     }
 
-    private static func writeSettings(_ settings: [String: Any]) throws {
-        let url = settingsURL
+    private static func writeSettings(_ settings: [String: Any], to url: URL) throws {
         do {
             try FileManager.default.createDirectory(
                 at: url.deletingLastPathComponent(), withIntermediateDirectories: true)

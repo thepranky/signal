@@ -23,7 +23,7 @@ struct MenuBarLabel: View {
     }
 }
 
-/// Tracks whether Signal's Claude Code hooks are installed, for the setup banner.
+/// Tracks whether Signal's hooks are installed, for the setup banner.
 @MainActor
 final class HookState: ObservableObject {
     @Published var installed: Bool = true
@@ -38,7 +38,7 @@ final class HookState: ObservableObject {
         do {
             try HookInstaller.install()
             installed = true
-            message = "Hooks installed. Start a Claude Code session to begin tracking."
+            message = "Hooks installed. Start a session in Claude Code or Cursor to begin tracking."
         } catch {
             message = error.localizedDescription
         }
@@ -55,7 +55,7 @@ struct MenuView: View {
             HStack(alignment: .bottom) {
                 VStack(alignment: .leading, spacing: 1) {
                     Text("Signal").font(.headline)
-                    Text("Claude Sessions")
+                    Text("Agent Sessions")
                         .font(.caption)
                         .foregroundStyle(.secondary)
                 }
@@ -110,8 +110,8 @@ struct MenuView: View {
     }
 }
 
-/// Shown when Signal's hooks aren't yet wired into Claude Code. One click sets
-/// them up, so users never need a terminal or the install script.
+/// Shown when Signal's hooks aren't yet set up. One click installs them, so
+/// users never need a terminal or the install script.
 struct SetupBanner: View {
     @ObservedObject var hooks: HookState
 
@@ -119,7 +119,7 @@ struct SetupBanner: View {
         VStack(alignment: .leading, spacing: 8) {
             Text("Finish setup")
                 .font(.subheadline.weight(.semibold))
-            Text("Signal needs to add hooks to Claude Code so it can see your sessions.")
+            Text("Signal needs to add hooks so it can see your agent sessions across Claude Code and Cursor.")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .fixedSize(horizontal: false, vertical: true)
@@ -129,7 +129,7 @@ struct SetupBanner: View {
                     .foregroundStyle(.red)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            Button("Set up Claude Code hooks") { hooks.install() }
+            Button("Set up hooks") { hooks.install() }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
         }
@@ -166,9 +166,6 @@ struct SessionRow: View {
                         .lineLimit(1)
                         .truncationMode(.tail)
                 }
-                Text(session.status.label)
-                    .font(.caption2)
-                    .foregroundStyle(.tertiary)
             }
             Spacer()
         }

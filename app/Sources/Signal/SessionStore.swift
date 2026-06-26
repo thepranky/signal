@@ -1,7 +1,7 @@
 import Foundation
 import SwiftUI
 
-/// Loads and keeps in sync the set of live Claude Code sessions by watching the
+/// Loads and keeps in sync the set of live agent sessions by watching the
 /// state directory the Signal hook writes to.
 @MainActor
 final class SessionStore: ObservableObject {

@@ -1,6 +1,6 @@
 import SwiftUI
 
-/// The traffic-light state of a Claude Code session.
+/// The traffic-light state of a tracked agent session.
 enum SessionStatus: String, Codable {
     case running   // actively working
     case waiting   // blocked waiting for your approval
@@ -23,14 +23,6 @@ enum SessionStatus: String, Codable {
         }
     }
 
-    var label: String {
-        switch self {
-        case .running: return "Running"
-        case .waiting: return "Waiting for you"
-        case .done:    return "Done"
-        }
-    }
-
     /// Sort/urgency priority: lower comes first (most urgent on top).
     var priority: Int {
         switch self {
@@ -41,7 +33,7 @@ enum SessionStatus: String, Codable {
     }
 }
 
-/// One tracked Claude Code session, mirrored from a state file on disk.
+/// One tracked AI coding agent session, mirrored from a state file on disk.
 struct Session: Identifiable, Codable {
     let sessionId: String
     let status: SessionStatus
@@ -58,13 +50,16 @@ struct Session: Identifiable, Codable {
 
     var id: String { sessionId }
 
-    /// Client tag shown in the UI. The plain CLI is the default/expected case
-    /// and is left unlabelled to reduce noise; other clients get an explicit tag.
+    /// Client tag shown in the UI. Every known client gets an explicit label so
+    /// sessions from different agents are easy to tell apart at a glance. The
+    /// plain Claude Code CLI is tagged "Claude"; an unrecognised client is left
+    /// untagged rather than mislabelled.
     var sourceLabel: String? {
         switch source {
         case "cursor": return "Cursor"
         case "vscode": return "VS Code"
         case "claude_desktop": return "Claude Desktop"
+        case "cli": return "Claude"
         default: return nil
         }
     }

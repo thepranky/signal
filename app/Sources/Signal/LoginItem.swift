@@ -22,7 +22,7 @@ enum LoginItem {
         let alert = NSAlert()
         alert.messageText = "Start Signal at login?"
         alert.informativeText = "Signal can launch automatically each time you log in "
-            + "so your Claude sessions are always tracked."
+            + "so your agent sessions are always tracked."
         alert.addButton(withTitle: "Start at Login")
         alert.addButton(withTitle: "Not Now")
         NSApp.activate(ignoringOtherApps: true)
