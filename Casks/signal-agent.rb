@@ -1,4 +1,4 @@
-cask "signal" do
+cask "signal-agent" do
   version "0.1.6"
   sha256 "7b8ad633ccdab84918ac2ad8d29df5d2188370ddb4531e456cc6bee4130d97b6"
 
