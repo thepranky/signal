@@ -12,7 +12,7 @@ jobs:
     name: Build and publish Signal.app
     runs-on: macos-14
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Run hook tests
         run: python3 -m unittest discover -s tests -v
       - name: Build app bundle
@@ -22,7 +22,7 @@ jobs:
         working-directory: app
         run: ditto -c -k --sequesterRsrc --keepParent Signal.app Signal-${{ github.ref_name }}.zip
       - name: Publish release
-        uses: softprops/action-gh-release@v2
+        uses: softprops/action-gh-release@v3
         with:
           files: app/Signal-${{ github.ref_name }}.zip
           generate_release_notes: true

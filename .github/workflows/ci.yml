@@ -10,9 +10,9 @@ jobs:
     name: Hook tests
     runs-on: macos-14
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Set up Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.12"
       - name: Run hook tests
@@ -22,7 +22,7 @@ jobs:
     name: Build Signal.app
     runs-on: macos-14
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
       - name: Show toolchain
         run: swift --version
       - name: Build app bundle
@@ -32,7 +32,7 @@ jobs:
         working-directory: app
         run: ditto -c -k --sequesterRsrc --keepParent Signal.app Signal.zip
       - name: Upload build artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Signal-app
           path: app/Signal.zip
