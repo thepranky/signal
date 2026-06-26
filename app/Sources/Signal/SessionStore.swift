@@ -22,7 +22,7 @@ final class SessionStore: ObservableObject {
         start()
     }
 
-    static var defaultDirectory: URL {
+    nonisolated static var defaultDirectory: URL {
         if let override = ProcessInfo.processInfo.environment["SIGNAL_STATE_DIR"] {
             return URL(fileURLWithPath: (override as NSString).expandingTildeInPath)
         }
@@ -32,14 +32,16 @@ final class SessionStore: ObservableObject {
 
     private func start() {
         reload()
-        watcher = DirectoryWatcher(url: directory) { [weak self] in
-            Task { @MainActor in self?.reload() }
+        // The outer closures capture nothing; only the inner Task captures self
+        // (weakly), which keeps the hop onto the main actor concurrency-safe.
+        watcher = DirectoryWatcher(url: directory) {
+            Task { @MainActor [weak self] in self?.reload() }
         }
         watcher?.start()
         // Periodic re-scan as a fallback so stale sessions age out even when no
         // filesystem event fires.
-        pruneTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { [weak self] _ in
-            Task { @MainActor in self?.reload() }
+        pruneTimer = Timer.scheduledTimer(withTimeInterval: 60, repeats: true) { _ in
+            Task { @MainActor [weak self] in self?.reload() }
         }
     }
 

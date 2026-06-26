@@ -6,11 +6,11 @@ import Foundation
 /// directory-level changes this picks up.
 final class DirectoryWatcher {
     private let url: URL
-    private let onChange: () -> Void
+    private let onChange: @Sendable () -> Void
     private var fileDescriptor: CInt = -1
     private var source: DispatchSourceFileSystemObject?
 
-    init(url: URL, onChange: @escaping () -> Void) {
+    init(url: URL, onChange: @escaping @Sendable () -> Void) {
         self.url = url
         self.onChange = onChange
     }
