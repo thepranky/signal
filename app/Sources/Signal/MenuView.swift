@@ -30,6 +30,7 @@ final class HookState: ObservableObject {
     @Published var message: String?
 
     func refresh() {
+        HookInstaller.repairIfNeeded()
         installed = HookInstaller.isInstalled()
     }
 

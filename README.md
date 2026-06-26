@@ -107,10 +107,14 @@ untouched.
 
 | Color | Meaning | Claude Code event(s) |
 |-------|---------|----------------------|
-| 🔴 Red | Actively running | `UserPromptSubmit`, `PreToolUse`, `PostToolUse` |
+| 🔴 Red | Actively running | `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure` |
 | 🟡 Yellow | Waiting for your approval | `Notification` (`permission_prompt`), `PermissionRequest` |
-| 🟢 Green | Finished turn, idle | `Stop` |
+| 🟢 Green | Finished turn, idle | `Stop`, `StopFailure` |
 | (no circle) | Session ended | `SessionEnd`, or staleness timeout |
+
+The installed hooks are copied to a stable `~/.signal/signal_hook.py` and tagged
+with a `SIGNAL_HOOK=1` marker, so moving the app/repo doesn't break them and
+uninstalling only ever removes Signal's own hooks.
 
 > **Note:** Claude Code cannot natively distinguish "finished the whole task"
 > from "finished by asking you a clarifying question" — both just end a turn, so
@@ -145,6 +149,21 @@ CI runs these on every push and before every release.
   ```bash
   git tag v0.1.0 && git push origin v0.1.0
   ```
+
+## Known limitations
+
+- **Unsigned / not notarized.** Distributed builds aren't code-signed, so
+  Gatekeeper warns on first launch (see the bypass above). Proper signing +
+  notarization requires an Apple Developer account and is planned, not done.
+- **No auto-update.** Downloaded builds don't update themselves yet; grab new
+  releases manually (Sparkle integration is a future option).
+- **Stale sessions linger up to 12h.** Without a heartbeat, Signal can't tell an
+  idle-but-alive session from a force-closed one, so dead sessions are pruned by
+  a timeout rather than instantly. Normal exits remove their circle immediately
+  via `SessionEnd`.
+- **Settings writes aren't locked.** The installer reads, merges, and atomically
+  writes `~/.claude/settings.json` (backing it up first). It does not hold a file
+  lock, so a simultaneous hand-edit during install could be lost.
 
 ## Project layout
 

@@ -15,6 +15,12 @@ jobs:
       - uses: actions/checkout@v7
       - name: Run hook tests
         run: python3 -m unittest discover -s tests -v
+      - name: Stamp version from tag
+        working-directory: app
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" Resources/Info.plist
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $VERSION" Resources/Info.plist
       - name: Build app bundle
         working-directory: app
         run: ./build-app.sh

@@ -57,7 +57,8 @@ final class SessionStore: ObservableObject {
         let decoder = JSONDecoder()
         var loaded: [Session] = []
 
-        for url in urls where url.pathExtension == "json" {
+        for url in urls where url.pathExtension == "json"
+            && !url.lastPathComponent.hasPrefix(".") {
             guard let data = try? Data(contentsOf: url),
                   let session = try? decoder.decode(Session.self, from: data) else { continue }
 

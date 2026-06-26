@@ -69,7 +69,9 @@ def session_file(directory: str, session_id: str) -> str:
 def atomic_write(path: str, payload: dict) -> None:
     """Write JSON atomically: temp file in the same dir, then os.replace."""
     directory = os.path.dirname(path)
-    fd, tmp = tempfile.mkstemp(dir=directory, prefix=".tmp-", suffix=".json")
+    # Use a non-.json suffix so the menu bar app (which loads *.json) never reads
+    # a half-written temp file during the brief window before os.replace.
+    fd, tmp = tempfile.mkstemp(dir=directory, prefix=".tmp-", suffix=".tmp")
     try:
         with os.fdopen(fd, "w") as f:
             json.dump(payload, f)

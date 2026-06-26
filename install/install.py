@@ -19,36 +19,42 @@ import sys
 import time
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-HOOK_SCRIPT = os.path.join(REPO_ROOT, "hooks", "signal_hook.py")
+SOURCE_HOOK = os.path.join(REPO_ROOT, "hooks", "signal_hook.py")
 SETTINGS_PATH = os.path.expanduser("~/.claude/settings.json")
-STATE_DIR = os.path.expanduser("~/.signal/sessions")
+SIGNAL_HOME = os.path.expanduser("~/.signal")
+STATE_DIR = os.path.join(SIGNAL_HOME, "sessions")
+# The hook is copied to a stable location so the installed commands keep working
+# even if this repo (or the app bundle) is later moved or deleted.
+INSTALLED_HOOK = os.path.join(SIGNAL_HOME, "signal_hook.py")
+
+# Unique token embedded in every command we install, so we can identify and
+# safely remove only our own hooks.
+MARKER = "SIGNAL_HOOK=1"
 
 # event name -> (matcher or None, status arg)
 MANAGED_HOOKS = [
     ("UserPromptSubmit", None, "running"),
     ("PreToolUse", "*", "running"),
     ("PostToolUse", "*", "running"),
+    ("PostToolUseFailure", "*", "running"),
     ("Notification", "permission_prompt", "waiting"),
     ("PermissionRequest", None, "waiting"),
     ("Stop", None, "done"),
+    ("StopFailure", None, "done"),
     ("SessionEnd", None, "end"),
 ]
 
 
 def command_for(status: str) -> str:
-    # /usr/bin/env avoids depending on the script's +x bit; quotes guard against
-    # spaces in the path. Matches the in-app installer (HookInstaller.swift).
-    return f'/usr/bin/env python3 "{HOOK_SCRIPT}" {status}'
+    # MARKER identifies our hooks; /usr/bin/env avoids depending on the script's
+    # +x bit; quotes guard against spaces in the path. Mirrors HookInstaller.swift.
+    return f'{MARKER} /usr/bin/env python3 "{INSTALLED_HOOK}" {status}'
 
 
 def is_signal_group(group: dict) -> bool:
-    """True if a matcher group was added by Signal (references our hook script).
-
-    Matches on the script's basename so this stays idempotent with the in-app
-    installer even if the two reference the script at different paths.
-    """
+    """True if a matcher group was added by Signal (carries our unique marker)."""
     for h in group.get("hooks", []):
-        if isinstance(h, dict) and "signal_hook.py" in str(h.get("command", "")):
+        if isinstance(h, dict) and MARKER in str(h.get("command", "")):
             return True
     return False
 
@@ -121,8 +127,8 @@ def main() -> int:
                         help="print the resulting settings; write nothing")
     args = parser.parse_args()
 
-    if not os.path.exists(HOOK_SCRIPT):
-        print(f"error: hook script not found at {HOOK_SCRIPT}", file=sys.stderr)
+    if not os.path.exists(SOURCE_HOOK):
+        print(f"error: hook script not found at {SOURCE_HOOK}", file=sys.stderr)
         return 1
 
     settings = load_settings()
@@ -136,14 +142,16 @@ def main() -> int:
             print("Signal hooks removed.")
         return 0
 
-    make_executable(HOOK_SCRIPT)
-    os.makedirs(STATE_DIR, exist_ok=True)
     add_signal_hooks(settings)
 
     if args.dry_run:
         print(json.dumps(settings, indent=2))
         return 0
 
+    # Copy the hook to its stable home so installed commands survive a moved repo.
+    os.makedirs(STATE_DIR, exist_ok=True)
+    shutil.copy2(SOURCE_HOOK, INSTALLED_HOOK)
+    make_executable(INSTALLED_HOOK)
     write_settings(settings)
     print(f"Signal hooks installed into {SETTINGS_PATH}")
     print(f"State directory: {STATE_DIR}")
