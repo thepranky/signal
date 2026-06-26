@@ -1,8 +1,9 @@
 # Signal
 
 A lightweight macOS menu bar app that monitors all your active **Claude Code**
-sessions with a traffic-light system — across Terminal, VS Code, the Cursor
-extension, and the desktop app, all at once.
+sessions with a traffic-light system — across the terminal CLI, the VS Code and
+JetBrains extensions, and Cursor's agent, all at once. Each session is tagged
+with the client it came from (e.g. **Claude CLI** vs **Cursor**).
 
 Each session gets its own colored circle:
 
@@ -138,6 +139,22 @@ uninstalling only ever removes Signal's own hooks.
 > from "finished by asking you a clarifying question" — both just end a turn, so
 > both show green. Only permission prompts surface as a distinct "waiting"
 > (yellow) state.
+
+## Which sessions are tracked
+
+Signal sees any client that fires Claude Code's hooks through your global
+`~/.claude/settings.json`. Each session is tagged in the menu with its client,
+derived from the session's transcript path:
+
+- **Cursor** — Cursor's built-in agent (transcripts under `~/.cursor/...`).
+- **Claude CLI** — the Claude Code CLI, plus the VS Code and JetBrains
+  extensions. These all share `~/.claude/projects`, so they can't be told apart
+  from the transcript path and are grouped under one tag.
+
+Cursor's hook events don't include a working directory, so Signal falls back to
+the project encoded in the transcript path to label them. (The Claude *desktop*
+app uses a different mechanism and does **not** fire these hooks, so it isn't
+tracked.)
 
 ## Configuration
 

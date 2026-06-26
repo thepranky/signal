@@ -107,6 +107,42 @@ class HookTestCase(unittest.TestCase):
         self.assertEqual(self.files(), ["unknown.json"])
         self.assertEqual(self.state("unknown")["project"], "app")
 
+    # --- source detection + transcript-derived project name ---------------
+
+    def test_cursor_session_without_cwd_derives_project_and_source(self):
+        transcript = os.path.expanduser(
+            "~/.cursor/projects/Users-alice-signal/agent-transcripts/abc/abc.jsonl")
+        self.run_hook("running", {
+            "session_id": "cur1",
+            "transcript_path": transcript,
+        })
+        data = self.state("cur1")
+        self.assertEqual(data["source"], "cursor")
+        # cwd was absent, so the project falls back to the transcript folder
+        # rather than the literal "unknown".
+        self.assertNotEqual(data["project"], "unknown")
+        self.assertIn("signal", data["project"])
+
+    def test_claude_code_source_from_transcript(self):
+        transcript = os.path.expanduser(
+            "~/.claude/projects/-Users-bob-my-app/sess.jsonl")
+        self.run_hook("running", {
+            "session_id": "cc1",
+            "cwd": "/Users/bob/my-app",
+            "transcript_path": transcript,
+        })
+        data = self.state("cc1")
+        self.assertEqual(data["source"], "claude_code")
+        self.assertEqual(data["project"], "my-app")
+
+    def test_unknown_source_when_transcript_unrecognized(self):
+        self.run_hook("running", {
+            "session_id": "x1",
+            "cwd": "/p/app",
+            "transcript_path": "/tmp/whatever.jsonl",
+        })
+        self.assertEqual(self.state("x1")["source"], "")
+
     def test_invalid_status_is_noop(self):
         code = self.run_hook("bogus", {"session_id": "sessA", "cwd": "/p/app"})
         self.assertEqual(code, 0)

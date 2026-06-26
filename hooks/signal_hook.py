@@ -53,11 +53,54 @@ def read_event() -> dict:
         return {}
 
 
-def project_name(cwd: str) -> str:
-    if not cwd:
-        return "unknown"
-    name = os.path.basename(os.path.normpath(cwd))
-    return name or cwd
+def project_name(cwd: str, transcript_path: str = "") -> str:
+    if cwd:
+        name = os.path.basename(os.path.normpath(cwd))
+        return name or cwd
+    # Some clients (notably Cursor's agent) fire hooks without a cwd. Fall back
+    # to the project encoded in the transcript path so the session still gets a
+    # meaningful label instead of "unknown".
+    return project_from_transcript(transcript_path) or "unknown"
+
+
+def project_from_transcript(transcript_path: str) -> str:
+    """Best-effort project name from a transcript path.
+
+    Both Claude Code (~/.claude/projects/<enc>/...) and Cursor
+    (~/.cursor/projects/<enc>/agent-transcripts/...) encode the project's
+    absolute path in <enc> by replacing path separators with '-'. We can't undo
+    that encoding unambiguously, so we strip the home-directory prefix and use
+    whatever folder name remains — good enough for a menu label.
+    """
+    if not transcript_path:
+        return ""
+    parts = transcript_path.split(os.sep)
+    try:
+        enc = parts[parts.index("projects") + 1]
+    except (ValueError, IndexError):
+        return ""
+    enc = enc.lstrip("-")
+    home_enc = os.path.expanduser("~").lstrip(os.sep).replace(os.sep, "-")
+    if home_enc and enc.startswith(home_enc + "-"):
+        enc = enc[len(home_enc) + 1:]
+    return enc
+
+
+def session_source(transcript_path: str) -> str:
+    """Identify which client produced the session, from its transcript path.
+
+    Returns "cursor", "claude_code", or "" when it can't be determined. Note
+    that the CLI, the VS Code extension, and JetBrains all share
+    ~/.claude/projects, so they're indistinguishable here and all read as
+    "claude_code".
+    """
+    if not transcript_path:
+        return ""
+    if f"{os.sep}.cursor{os.sep}" in transcript_path:
+        return "cursor"
+    if f"{os.sep}.claude{os.sep}" in transcript_path:
+        return "claude_code"
+    return ""
 
 
 def session_file(directory: str, session_id: str) -> str:
@@ -110,12 +153,14 @@ def main() -> int:
         return 0
 
     cwd = event.get("cwd") or ""
+    transcript_path = event.get("transcript_path") or ""
     payload = {
         "session_id": session_id,
         "status": status,
-        "project": project_name(cwd),
+        "project": project_name(cwd, transcript_path),
         "cwd": cwd,
-        "transcript_path": event.get("transcript_path") or "",
+        "transcript_path": transcript_path,
+        "source": session_source(transcript_path),
         "updated_at": time.time(),
     }
 

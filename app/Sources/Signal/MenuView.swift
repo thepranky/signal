@@ -168,7 +168,17 @@ struct SessionRow: View {
                 .fill(session.status.color)
                 .frame(width: 12, height: 12)
             VStack(alignment: .leading, spacing: 1) {
-                Text(session.project)
+                HStack(spacing: 6) {
+                    Text(session.project)
+                    if let source = session.sourceLabel {
+                        Text(source)
+                            .font(.caption2)
+                            .foregroundStyle(.secondary)
+                            .padding(.horizontal, 5)
+                            .padding(.vertical, 1)
+                            .background(Capsule().fill(Color.secondary.opacity(0.15)))
+                    }
+                }
                 Text(session.status.label)
                     .font(.caption)
                     .foregroundStyle(.secondary)

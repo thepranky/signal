@@ -48,9 +48,21 @@ struct Session: Identifiable, Codable {
     let project: String
     let cwd: String
     let transcriptPath: String
+    /// Which client produced the session ("claude_code", "cursor"). Optional so
+    /// state files written by older hooks still decode.
+    let source: String?
     let updatedAt: Double
 
     var id: String { sessionId }
+
+    /// Human-friendly client tag for the UI, or nil when unknown/unset.
+    var sourceLabel: String? {
+        switch source {
+        case "cursor": return "Cursor"
+        case "claude_code": return "Claude CLI"
+        default: return nil
+        }
+    }
 
     enum CodingKeys: String, CodingKey {
         case sessionId = "session_id"
@@ -58,6 +70,7 @@ struct Session: Identifiable, Codable {
         case project
         case cwd
         case transcriptPath = "transcript_path"
+        case source
         case updatedAt = "updated_at"
     }
 }
