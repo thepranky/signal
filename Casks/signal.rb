@@ -1,6 +1,6 @@
 cask "signal" do
-  version "0.1.5"
-  sha256 "0f5bc5d2559e4658fd81e9820d6946579af5b3c22c5c867dadda765b0f05a128"
+  version "0.1.6"
+  sha256 "7b8ad633ccdab84918ac2ad8d29df5d2188370ddb4531e456cc6bee4130d97b6"
 
   url "https://github.com/thepranky/signal/releases/download/v#{version}/Signal-v#{version}.dmg"
   name "Signal"
