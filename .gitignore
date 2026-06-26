@@ -1,0 +1,12 @@
+# Swift / SwiftPM
+app/.build/
+app/Signal.app/
+*.xcodeproj
+.swiftpm/
+
+# Python
+__pycache__/
+*.pyc
+
+# macOS
+.DS_Store

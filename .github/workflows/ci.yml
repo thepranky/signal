@@ -1,0 +1,39 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+jobs:
+  test-hooks:
+    name: Hook tests
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Run hook tests
+        run: python3 -m unittest discover -s tests -v
+
+  build-app:
+    name: Build Signal.app
+    runs-on: macos-14
+    steps:
+      - uses: actions/checkout@v4
+      - name: Show toolchain
+        run: swift --version
+      - name: Build app bundle
+        working-directory: app
+        run: ./build-app.sh
+      - name: Zip app
+        working-directory: app
+        run: ditto -c -k --sequesterRsrc --keepParent Signal.app Signal.zip
+      - name: Upload build artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: Signal-app
+          path: app/Signal.zip
+          if-no-files-found: error
