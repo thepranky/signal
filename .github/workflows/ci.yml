@@ -28,12 +28,20 @@ jobs:
       - name: Build app bundle
         working-directory: app
         run: ./build-app.sh
+      - name: Verify code signature
+        working-directory: app
+        run: codesign --verify --deep --strict --verbose=2 Signal.app
+      - name: Build DMG
+        working-directory: app
+        run: ./build-dmg.sh Signal.dmg
       - name: Zip app
         working-directory: app
         run: ditto -c -k --sequesterRsrc --keepParent Signal.app Signal.zip
-      - name: Upload build artifact
+      - name: Upload build artifacts
         uses: actions/upload-artifact@v7
         with:
           name: Signal-app
-          path: app/Signal.zip
+          path: |
+            app/Signal.zip
+            app/Signal.dmg
           if-no-files-found: error

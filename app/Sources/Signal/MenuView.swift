@@ -49,6 +49,7 @@ final class HookState: ObservableObject {
 struct MenuView: View {
     @ObservedObject var store: SessionStore
     @StateObject private var hooks = HookState()
+    @StateObject private var loginItem = LoginItem()
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -88,6 +89,27 @@ struct MenuView: View {
 
             Divider()
 
+            Toggle("Start at login", isOn: Binding(
+                get: { loginItem.enabled },
+                set: { loginItem.set($0) }
+            ))
+            .toggleStyle(.switch)
+            .controlSize(.mini)
+            .font(.caption)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 6)
+
+            if let error = loginItem.errorMessage {
+                Text(error)
+                    .font(.caption2)
+                    .foregroundStyle(.red)
+                    .fixedSize(horizontal: false, vertical: true)
+                    .padding(.horizontal, 12)
+                    .padding(.bottom, 6)
+            }
+
+            Divider()
+
             HStack(spacing: 12) {
                 LegendDot(color: .red, text: "Running")
                 LegendDot(color: .yellow, text: "Waiting")
@@ -101,7 +123,10 @@ struct MenuView: View {
             .padding(.vertical, 8)
         }
         .frame(width: 300)
-        .onAppear { hooks.refresh() }
+        .onAppear {
+            hooks.refresh()
+            loginItem.refresh()
+        }
     }
 }
 

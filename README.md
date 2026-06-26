@@ -52,17 +52,28 @@ beyond the menu bar app itself.
 
 The recommended path for most people:
 
-1. Download `Signal-vX.Y.Z.zip` from the [Releases](../../releases) page and
-   unzip it (CI builds every release, so you never touch a compiler).
-2. Move `Signal.app` to `/Applications` and open it.
-   - macOS Gatekeeper may warn about an unidentified developer on first launch.
-     Right-click the app → **Open** → **Open** to bypass it once, or run
-     `xattr -dr com.apple.quarantine /Applications/Signal.app`.
-3. Click **Set up Claude Code hooks** in the Signal menu. That's it — the app
+1. Download `Signal-vX.Y.Z.dmg` from the [Releases](../../releases) page and
+   open it (CI builds every release, so you never touch a compiler). A plain
+   `.zip` is also attached if you prefer it.
+2. Open `Signal.app`. On first launch Signal offers to **move itself into your
+   Applications folder** and relaunch — just click **Move to Applications
+   Folder**. (From the DMG you can also drag it onto the Applications shortcut.)
+   - **Gatekeeper:** because the build isn't notarized, macOS may say Signal
+     *"is damaged"* or is from an unidentified developer. It isn't damaged —
+     that's just the unsigned-app warning. Clear it with:
+     ```bash
+     xattr -dr com.apple.quarantine /Applications/Signal.app
+     ```
+     (If you used the auto-move prompt, Signal strips this flag from the moved
+     copy for you.)
+3. **Signal is a menu bar app** — it has no Dock icon and no window. Look for its
+   icon at the **top-right of your screen**, near the clock (a ⚪️ when no
+   sessions are active). Click it to open the panel.
+4. Click **Set up Claude Code hooks** in the Signal menu. That's it — the app
    bundles the hook script and wires it into your global Claude settings for
    you (no terminal, no repo clone).
-4. (Optional) Add `Signal.app` to **System Settings → General → Login Items**
-   so it starts automatically.
+5. (Optional) Flip **Start at login** in the Signal menu so it launches
+   automatically each time you log in.
 
 Open a new Claude Code session in any interface and watch the circles light up.
 
@@ -82,11 +93,18 @@ python3 install/install.py
 cd app
 ./build-app.sh
 open Signal.app
+
+# (Optional) package a distributable disk image.
+./build-dmg.sh
 ```
 
+`build-app.sh` ad-hoc signs the bundle (free, no Apple Developer account). This
+does not notarize it, so Gatekeeper still warns on first launch, but it lets the
+**Start at login** toggle register the app via `SMAppService`.
+
 Open a new Claude Code session in any interface and watch the circles light up.
-To start Signal automatically, add `Signal.app` to **System Settings → General
-→ Login Items**.
+To start Signal automatically, flip **Start at login** in the Signal menu (or
+add `Signal.app` to **System Settings → General → Login Items**).
 
 ### Preview the hook config without writing anything
 
@@ -152,9 +170,11 @@ CI runs these on every push and before every release.
 
 ## Known limitations
 
-- **Unsigned / not notarized.** Distributed builds aren't code-signed, so
-  Gatekeeper warns on first launch (see the bypass above). Proper signing +
-  notarization requires an Apple Developer account and is planned, not done.
+- **Not notarized.** Distributed builds are only ad-hoc signed, so Gatekeeper
+  still warns on first launch (see the bypass above). Full Developer ID signing +
+  notarization requires a paid Apple Developer account and is intentionally not
+  done; the auto-move-to-Applications step strips quarantine from the relocated
+  copy to soften the rough edge.
 - **No auto-update.** Downloaded builds don't update themselves yet; grab new
   releases manually (Sparkle integration is a future option).
 - **Stale sessions linger up to 12h.** Without a heartbeat, Signal can't tell an
@@ -174,9 +194,10 @@ signal/
 ├── tests/test_signal_hook.py
 ├── app/                     # SwiftUI MenuBarExtra menu bar app
 │   ├── Package.swift
-│   ├── Sources/Signal/
+│   ├── Sources/Signal/      # incl. AppRelocator (auto-move) + LoginItem
 │   ├── Resources/Info.plist
-│   └── build-app.sh
+│   ├── build-app.sh         # build + ad-hoc sign Signal.app
+│   └── build-dmg.sh         # package Signal.app into a .dmg
 ├── .github/workflows/       # CI build + tagged releases
 ├── README.md
 └── LICENSE

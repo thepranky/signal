@@ -20,5 +20,11 @@ cp Resources/Info.plist "$APP/Contents/Info.plist"
 cp ../hooks/signal_hook.py "$APP/Contents/Resources/signal_hook.py"
 cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 
+# Ad-hoc sign the bundle. This is free (no Apple Developer account) and does NOT
+# notarize — Gatekeeper still warns on first launch — but a valid signature is
+# required for SMAppService (the "Start at login" toggle) to register the app.
+echo "Ad-hoc signing $APP ..."
+codesign --force --deep --sign - "$APP"
+
 echo "Done: $(pwd)/$APP"
 echo "Run it with: open $APP"
