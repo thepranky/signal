@@ -159,9 +159,16 @@ struct SessionRow: View {
                             .background(Capsule().fill(Color.secondary.opacity(0.15)))
                     }
                 }
+                if let title = session.title, !title.isEmpty {
+                    Text(title)
+                        .font(.caption)
+                        .foregroundStyle(.secondary)
+                        .lineLimit(1)
+                        .truncationMode(.tail)
+                }
                 Text(session.status.label)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
+                    .font(.caption2)
+                    .foregroundStyle(.tertiary)
             }
             Spacer()
         }

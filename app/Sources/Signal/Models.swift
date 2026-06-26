@@ -46,21 +46,25 @@ struct Session: Identifiable, Codable {
     let sessionId: String
     let status: SessionStatus
     let project: String
+    /// Short excerpt of the session's first prompt, for disambiguation. Optional
+    /// so state files written by older hooks still decode.
+    let title: String?
     let cwd: String
     let transcriptPath: String
-    /// Which client produced the session ("claude_code", "cursor"). Optional so
-    /// state files written by older hooks still decode.
+    /// Which client produced the session ("cli", "vscode", "claude_desktop",
+    /// "cursor"). Optional so older state files still decode.
     let source: String?
     let updatedAt: Double
 
     var id: String { sessionId }
 
-    /// Human-friendly client tag shown in the UI only for non-default clients.
-    /// Claude CLI is the default/expected case and is unlabelled to reduce noise;
-    /// Cursor (and any future distinct clients) get an explicit tag.
+    /// Client tag shown in the UI. The plain CLI is the default/expected case
+    /// and is left unlabelled to reduce noise; other clients get an explicit tag.
     var sourceLabel: String? {
         switch source {
         case "cursor": return "Cursor"
+        case "vscode": return "VS Code"
+        case "claude_desktop": return "Claude Desktop"
         default: return nil
         }
     }
@@ -69,6 +73,7 @@ struct Session: Identifiable, Codable {
         case sessionId = "session_id"
         case status
         case project
+        case title
         case cwd
         case transcriptPath = "transcript_path"
         case source

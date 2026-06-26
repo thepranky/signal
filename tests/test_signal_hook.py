@@ -123,7 +123,9 @@ class HookTestCase(unittest.TestCase):
         self.assertNotEqual(data["project"], "unknown")
         self.assertIn("signal", data["project"])
 
-    def test_claude_code_source_from_transcript(self):
+    def test_claude_cli_source_from_path_without_entrypoint(self):
+        # A ~/.claude transcript path that doesn't exist on disk falls back to
+        # the path heuristic, which is the (unlabelled) plain CLI.
         transcript = os.path.expanduser(
             "~/.claude/projects/-Users-bob-my-app/sess.jsonl")
         self.run_hook("running", {
@@ -132,7 +134,7 @@ class HookTestCase(unittest.TestCase):
             "transcript_path": transcript,
         })
         data = self.state("cc1")
-        self.assertEqual(data["source"], "claude_code")
+        self.assertEqual(data["source"], "cli")
         self.assertEqual(data["project"], "my-app")
 
     def test_unknown_source_when_transcript_unrecognized(self):
@@ -142,6 +144,57 @@ class HookTestCase(unittest.TestCase):
             "transcript_path": "/tmp/whatever.jsonl",
         })
         self.assertEqual(self.state("x1")["source"], "")
+
+    # --- title + entrypoint extracted from the transcript -----------------
+
+    def write_transcript(self, name, lines):
+        path = os.path.join(self.state_dir, name)
+        with open(path, "w", encoding="utf-8") as f:
+            for obj in lines:
+                f.write(json.dumps(obj) + "\n")
+        return path
+
+    def test_title_and_entrypoint_from_claude_transcript(self):
+        transcript = self.write_transcript("claude.jsonl", [
+            {"type": "queue-operation", "operation": "enqueue"},
+            {"type": "user", "entrypoint": "vscode",
+             "message": {"role": "user", "content": "Fix the failing test"}},
+        ])
+        self.run_hook("running", {
+            "session_id": "t1",
+            "cwd": "/Users/bob/app",
+            "transcript_path": transcript,
+        })
+        data = self.state("t1")
+        self.assertEqual(data["title"], "Fix the failing test")
+        self.assertEqual(data["source"], "vscode")
+
+    def test_title_unwraps_cursor_user_query(self):
+        wrapped = ("<timestamp>Fri</timestamp>\n<user_query>\n"
+                   "Make the button blue\n</user_query>")
+        transcript = self.write_transcript("cursor.jsonl", [
+            {"role": "user",
+             "message": {"content": [{"type": "text", "text": wrapped}]}},
+        ])
+        self.run_hook("running", {
+            "session_id": "t2",
+            "transcript_path": transcript,
+        })
+        self.assertEqual(self.state("t2")["title"], "Make the button blue")
+
+    def test_title_is_truncated(self):
+        long_prompt = "word " * 40
+        transcript = self.write_transcript("long.jsonl", [
+            {"type": "user", "message": {"role": "user", "content": long_prompt}},
+        ])
+        self.run_hook("running", {
+            "session_id": "t3",
+            "cwd": "/p/app",
+            "transcript_path": transcript,
+        })
+        title = self.state("t3")["title"]
+        self.assertLessEqual(len(title), 60)
+        self.assertTrue(title.endswith("\u2026"))
 
     def test_invalid_status_is_noop(self):
         code = self.run_hook("bogus", {"session_id": "sessA", "cwd": "/p/app"})

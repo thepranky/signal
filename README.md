@@ -1,9 +1,9 @@
 # Signal
 
 A lightweight macOS menu bar app that monitors all your active **Claude Code**
-sessions with a traffic-light system — across the terminal CLI, the VS Code and
-JetBrains extensions, and Cursor's agent, all at once. Each session is tagged
-with the client it came from (e.g. **Claude CLI** vs **Cursor**).
+sessions with a traffic-light system — across the terminal CLI, the VS Code
+extension, the Claude desktop app, and Cursor's agent, all at once. Each session
+shows an excerpt of its first prompt and a tag for the client it came from.
 
 Each session gets its own colored circle:
 
@@ -15,30 +15,20 @@ When a session ends, its circle disappears.
 
 ## How it works
 
-Signal has two halves:
-
 ```
 Claude Code (any interface)
    │  global hooks in ~/.claude/settings.json
    ▼
-hooks/signal_hook.py   ──writes──▶   ~/.signal/sessions/<session_id>.json
-                                            │  watched by
-                                            ▼
-                                  Signal.app (menu bar)  →  🔴🟡🟢
+signal_hook.py   ──writes──▶   ~/.signal/sessions/<session_id>.json
+                                        │  watched by
+                                        ▼
+                              Signal.app (menu bar)  →  🔴🟡🟢
 ```
 
-1. **Hooks** — Claude Code fires lifecycle events (`UserPromptSubmit`,
-   `PreToolUse`/`PostToolUse`, `Notification`, `PermissionRequest`, `Stop`,
-   `SessionEnd`). A tiny Python handler records each session's current status to
-   a per-session JSON file. Because the hooks live in your **global** Claude
-   settings, every session is tracked regardless of which interface hosts it,
-   and each session is keyed by its unique `session_id` so the same session
-   open in two windows is never double-counted.
-2. **Menu bar app** — a SwiftUI `MenuBarExtra` app watches that directory and
-   renders one circle per live session, labeled by project folder name.
+1. **Hooks** — Claude Code lifecycle events write each session's status to a JSON file in `~/.signal/sessions/`.
+2. **Menu bar app** — watches that directory and shows one circle per live session.
 
-State files are plain JSON — no daemon, no network, no background services
-beyond the menu bar app itself.
+Plain JSON on disk — no daemon, no network.
 
 ## Requirements
 
@@ -49,63 +39,45 @@ beyond the menu bar app itself.
   Command Line Tools alone are not enough — `MenuBarExtra` needs the macOS 13+
   SDK. **You do _not_ need Xcode to just run a downloaded build.**
 
-## Install (download — no Xcode needed)
+## Install (Option 1: one line — recommended)
 
-The recommended path for most people:
+```bash
+curl -fsSL https://raw.githubusercontent.com/thepranky/signal/master/scripts/install.sh | bash
+```
 
-1. Download `Signal-vX.Y.Z.dmg` from the [Releases](../../releases) page and
-   open it (CI builds every release, so you never touch a compiler). A plain
-   `.zip` is also attached if you prefer it.
-2. Open `Signal.app`. On first launch Signal offers to **move itself into your
-   Applications folder** and relaunch — just click **Move to Applications
-   Folder**. (From the DMG you can also drag it onto the Applications shortcut.)
-   - **Gatekeeper:** because the build isn't notarized, macOS may say Signal
-     *"is damaged"* or is from an unidentified developer. It isn't damaged —
-     that's just the unsigned-app warning. Clear it with:
-     ```bash
-     xattr -dr com.apple.quarantine /Applications/Signal.app
-     ```
-     (If you used the auto-move prompt, Signal strips this flag from the moved
-     copy for you.)
-3. **Signal is a menu bar app** — it has no Dock icon and no window. Look for its
-   icon at the **top-right of your screen**, near the clock (a ⚪️ when no
-   sessions are active). Click it to open the panel.
-4. Click **Set up Claude Code hooks** in the Signal menu. That's it — the app
-   bundles the hook script and wires it into your global Claude settings for
-   you (no terminal, no repo clone).
-5. (Optional) Flip **Start at login** in the Signal menu so it launches
-   automatically each time you log in.
+This grabs the latest release, installs `Signal.app` into `/Applications`, and
+launches it. Then click **Set up Claude Code hooks** in the menu.
 
-Open a new Claude Code session in any interface and watch the circles light up.
+To update, run the same command again.
 
-> Prefer the command line, or building from source? You can still run the
-> installer script manually: `python3 install/install.py`.
+## Install (Option 2: Homebrew)
 
-## Install (build from source)
+```bash
+brew install --cask thepranky/signal/signal
+```
+
+Same setup step in the menu. To update: `brew upgrade --cask signal`.
+
+## Install (Option 3: download)
+
+1. Download `Signal-vX.Y.Z.dmg` from [Releases](../../releases) and open it.
+2. Move `Signal.app` to `/Applications` (or accept the in-app prompt).
+3. If macOS blocks launch, clear quarantine:
+   ```bash
+   xattr -dr com.apple.quarantine /Applications/Signal.app
+   ```
+4. Click the menu bar icon (top-right, near the clock) → **Set up Claude Code hooks**.
+
+## Install (Option 4: build from source)
 
 ```bash
 git clone <your-fork-url> signal
 cd signal
-
-# 1. Wire the hooks into Claude Code (idempotent; backs up your settings).
 python3 install/install.py
-
-# 2. Build and launch the menu bar app.
-cd app
-./build-app.sh
-open Signal.app
-
-# (Optional) package a distributable disk image.
-./build-dmg.sh
+cd app && ./build-app.sh && open Signal.app
 ```
 
-`build-app.sh` ad-hoc signs the bundle (free, no Apple Developer account). This
-does not notarize it, so Gatekeeper still warns on first launch, but it lets the
-**Start at login** toggle register the app via `SMAppService`.
-
-Open a new Claude Code session in any interface and watch the circles light up.
-To start Signal automatically, flip **Start at login** in the Signal menu (or
-add `Signal.app` to **System Settings → General → Login Items**).
+Requires Xcode (not just Command Line Tools). Optionally run `./build-dmg.sh` to package a disk image.
 
 ### Preview the hook config without writing anything
 
@@ -143,18 +115,18 @@ uninstalling only ever removes Signal's own hooks.
 ## Which sessions are tracked
 
 Signal sees any client that fires Claude Code's hooks through your global
-`~/.claude/settings.json`. Each session is tagged in the menu with its client,
-derived from the session's transcript path:
+`~/.claude/settings.json` — including the **terminal CLI, the VS Code
+extension, the Claude desktop app, and Cursor's agent**. Each session is shown
+with a short excerpt of its first prompt, plus a client tag for everything
+except the plain CLI (the common case, left untagged to reduce noise):
 
 - **Cursor** — Cursor's built-in agent (transcripts under `~/.cursor/...`).
-- **Claude CLI** — the Claude Code CLI, plus the VS Code and JetBrains
-  extensions. These all share `~/.claude/projects`, so they can't be told apart
-  from the transcript path and are grouped under one tag.
+- **VS Code** / **Claude Desktop** — detected from the transcript's
+  `entrypoint` field.
+- *(no tag)* — the plain Claude Code CLI.
 
 Cursor's hook events don't include a working directory, so Signal falls back to
-the project encoded in the transcript path to label them. (The Claude *desktop*
-app uses a different mechanism and does **not** fire these hooks, so it isn't
-tracked.)
+the project encoded in the transcript path to label them.
 
 ## Configuration
 
@@ -215,6 +187,9 @@ signal/
 │   ├── Resources/Info.plist
 │   ├── build-app.sh         # build + ad-hoc sign Signal.app
 │   └── build-dmg.sh         # package Signal.app into a .dmg
+├── scripts/install.sh       # one-line curl installer (no quarantine)
+├── scripts/update-cask.sh   # bump the Homebrew cask after a release
+├── Casks/signal.rb          # Homebrew cask (use as a tap)
 ├── .github/workflows/       # CI build + tagged releases
 ├── README.md
 └── LICENSE

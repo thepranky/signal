@@ -20,11 +20,25 @@ a hook must never disrupt the Claude Code session it is observing.
 
 import json
 import os
+import re
 import sys
 import tempfile
 import time
 
 VALID_STATUSES = {"running", "waiting", "done", "end"}
+
+# Cap how much of a transcript we scan for the first user message, so a huge
+# transcript never turns a hook into a slow file read.
+TRANSCRIPT_SCAN_LINES = 80
+TITLE_MAX_LEN = 60
+
+# Map a Claude Code `entrypoint` value to Signal's source token. The plain CLI
+# is intentionally left unlabelled (the common case shouldn't add noise).
+ENTRYPOINT_SOURCES = {
+    "cli": "cli",
+    "vscode": "vscode",
+    "claude-desktop": "claude_desktop",
+}
 
 
 def state_dir() -> str:
@@ -86,21 +100,99 @@ def project_from_transcript(transcript_path: str) -> str:
     return enc
 
 
-def session_source(transcript_path: str) -> str:
-    """Identify which client produced the session, from its transcript path.
+def session_source(transcript_path: str, entrypoint: str = "") -> str:
+    """Identify which client produced the session.
 
-    Returns "cursor", "claude_code", or "" when it can't be determined. Note
-    that the CLI, the VS Code extension, and JetBrains all share
-    ~/.claude/projects, so they're indistinguishable here and all read as
-    "claude_code".
+    Cursor uses its own transcript tree, so the path is authoritative there.
+    For Claude Code we prefer the transcript's `entrypoint` field (cli / vscode
+    / claude-desktop), falling back to the path. Returns one of "cursor",
+    "vscode", "claude_desktop", "cli", or "" (unknown).
     """
-    if not transcript_path:
-        return ""
-    if f"{os.sep}.cursor{os.sep}" in transcript_path:
+    if transcript_path and f"{os.sep}.cursor{os.sep}" in transcript_path:
         return "cursor"
-    if f"{os.sep}.claude{os.sep}" in transcript_path:
-        return "claude_code"
+    if entrypoint:
+        return ENTRYPOINT_SOURCES.get(entrypoint, "cli")
+    if transcript_path and f"{os.sep}.claude{os.sep}" in transcript_path:
+        return "cli"
     return ""
+
+
+def _clean_title(text: str) -> str:
+    """Turn a raw first-prompt string into a short, single-line label.
+
+    Cursor wraps the user's text in <user_query> tags and prepends a
+    <timestamp> block, so unwrap those when present, then collapse whitespace
+    and truncate. This is a plain excerpt, not an AI-generated summary.
+    """
+    if not text:
+        return ""
+    match = re.search(r"<user_query>\s*(.*?)\s*</user_query>", text, re.DOTALL)
+    if match:
+        text = match.group(1)
+    # Drop any other angle-bracket wrapper tags (e.g. <timestamp>...</timestamp>).
+    text = re.sub(r"<[^>]+>", " ", text)
+    text = " ".join(text.split())
+    if len(text) > TITLE_MAX_LEN:
+        text = text[: TITLE_MAX_LEN - 1].rstrip() + "\u2026"
+    return text
+
+
+def _message_text(message) -> str:
+    """Extract plain text from a transcript message's `content`.
+
+    Handles both Claude's string content and the list-of-blocks form used by
+    Cursor (and newer Claude transcripts).
+    """
+    if isinstance(message, str):
+        return message
+    if not isinstance(message, dict):
+        return ""
+    content = message.get("content")
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        for block in content:
+            if isinstance(block, dict) and block.get("type", "text") == "text":
+                if block.get("text"):
+                    return block["text"]
+    return ""
+
+
+def read_transcript_meta(transcript_path: str) -> dict:
+    """Best-effort title + entrypoint from a transcript's first user message.
+
+    Scans only the first TRANSCRIPT_SCAN_LINES lines and stops at the first
+    user message. Always returns a dict and never raises — a hook must not fail
+    the session it observes.
+    """
+    meta = {"title": "", "entrypoint": ""}
+    if not transcript_path or not os.path.isfile(transcript_path):
+        return meta
+    try:
+        with open(transcript_path, "r", encoding="utf-8", errors="replace") as f:
+            for _ in range(TRANSCRIPT_SCAN_LINES):
+                line = f.readline()
+                if not line:
+                    break
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    obj = json.loads(line)
+                except (ValueError, TypeError):
+                    continue
+                if not isinstance(obj, dict):
+                    continue
+                if not meta["entrypoint"] and isinstance(obj.get("entrypoint"), str):
+                    meta["entrypoint"] = obj["entrypoint"]
+                message = obj.get("message", obj)
+                role = obj.get("role") or (message.get("role") if isinstance(message, dict) else None)
+                if role == "user":
+                    meta["title"] = _clean_title(_message_text(message))
+                    break
+    except OSError:
+        pass
+    return meta
 
 
 def session_file(directory: str, session_id: str) -> str:
@@ -154,13 +246,15 @@ def main() -> int:
 
     cwd = event.get("cwd") or ""
     transcript_path = event.get("transcript_path") or ""
+    meta = read_transcript_meta(transcript_path)
     payload = {
         "session_id": session_id,
         "status": status,
         "project": project_name(cwd, transcript_path),
+        "title": meta["title"],
         "cwd": cwd,
         "transcript_path": transcript_path,
-        "source": session_source(transcript_path),
+        "source": session_source(transcript_path, meta["entrypoint"]),
         "updated_at": time.time(),
     }
 
