@@ -13,6 +13,12 @@ cask "signal-agent" do
 
   app "Signal.app"
 
+  postflight do
+    system_command "/usr/bin/xattr",
+                   args:         ["-dr", "com.apple.quarantine", "#{appdir}/Signal.app"],
+                   must_succeed: false
+  end
+
   caveats <<~EOS
     Signal is a menu bar app (no Dock icon). After installing, click its icon
     in the menu bar (top-right), then "Set up hooks" to begin tracking your
