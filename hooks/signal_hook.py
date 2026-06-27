@@ -166,11 +166,13 @@ def _clean_title(text: str) -> str:
     """
     if not text:
         return ""
+    text = re.sub(r"<environment_context>.*?</environment_context>", " ", text, flags=re.DOTALL)
     match = re.search(r"<user_query>\s*(.*?)\s*</user_query>", text, re.DOTALL)
     if match:
         text = match.group(1)
     # Drop any other angle-bracket wrapper tags (e.g. <timestamp>...</timestamp>).
     text = re.sub(r"<[^>]+>", " ", text)
+    text = re.sub(r"\[Image\s+#\d+\]", " ", text)
     text = " ".join(text.split())
     if len(text) > TITLE_MAX_LEN:
         text = text[: TITLE_MAX_LEN - 1].rstrip() + "\u2026"
@@ -191,10 +193,12 @@ def _message_text(message) -> str:
     if isinstance(content, str):
         return content
     if isinstance(content, list):
+        texts = []
         for block in content:
-            if isinstance(block, dict) and block.get("type", "text") == "text":
+            if isinstance(block, dict) and block.get("type", "text") in ("text", "input_text"):
                 if block.get("text"):
-                    return block["text"]
+                    texts.append(block["text"])
+        return "\n".join(texts)
     return ""
 
 
@@ -226,10 +230,14 @@ def read_transcript_meta(transcript_path: str) -> dict:
                 if not meta["entrypoint"] and isinstance(obj.get("entrypoint"), str):
                     meta["entrypoint"] = obj["entrypoint"]
                 message = obj.get("message", obj)
+                if obj.get("type") == "response_item" and isinstance(obj.get("payload"), dict):
+                    message = obj["payload"]
                 role = obj.get("role") or (message.get("role") if isinstance(message, dict) else None)
                 if role == "user":
-                    meta["title"] = _clean_title(_message_text(message))
-                    break
+                    title = _clean_title(_message_text(message))
+                    if title:
+                        meta["title"] = title
+                        break
     except OSError:
         pass
     return meta

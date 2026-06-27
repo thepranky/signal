@@ -284,6 +284,30 @@ class HookTestCase(unittest.TestCase):
         self.assertEqual(data["project"], "signal")
         self.assertEqual(data["source"], "codex")
 
+    def test_representative_codex_transcript_title(self):
+        transcript = self.write_transcript("codex.jsonl", [
+            {"type": "session_meta", "payload": {"originator": "codex-tui"}},
+            {"type": "response_item",
+             "payload": {"type": "message", "role": "user", "content": [
+                 {"type": "input_text", "text": "<environment_context><cwd>/p/app</cwd></environment_context>"},
+             ]}},
+            {"type": "response_item",
+             "payload": {"type": "message", "role": "user", "content": [
+                 {"type": "input_text", "text": "<image name=[Image #1] path=\"/tmp/a.png\">"},
+                 {"type": "input_text", "text": "</image>"},
+                 {"type": "input_text", "text": "[Image #1]Fix Codex session titles"},
+             ]}},
+        ])
+        self.run_hook("running", {
+            "hook_event_name": "UserPromptSubmit",
+            "session_id": "codex-session-title",
+            "cwd": "/Users/alice/projects/signal",
+            "transcript_path": transcript,
+        }, source="codex")
+        data = self.state("codex-session-title")
+        self.assertEqual(data["title"], "Fix Codex session titles")
+        self.assertEqual(data["source"], "codex")
+
     def test_codex_permission_request_maps_to_waiting(self):
         self.run_hook("waiting", {
             "hook_event_name": "PermissionRequest",
