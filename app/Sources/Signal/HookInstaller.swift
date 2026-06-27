@@ -160,12 +160,23 @@ enum HookInstaller {
         }
     }
 
-    /// If hooks are installed but the stable script went missing (e.g. ~/.signal
-    /// was cleaned), restore it so the installed commands don't fail.
+    /// If hooks are installed but the stable script went missing or is from an
+    /// older app version, restore it so installed commands run the current hook.
     static func repairIfNeeded() {
-        guard isInstalled(),
-              !FileManager.default.fileExists(atPath: installedHookURL.path) else { return }
+        guard isInstalled(), stableHookNeedsRepair() else { return }
         try? copyHookToStableLocation()
+    }
+
+    private static func stableHookNeedsRepair() -> Bool {
+        guard FileManager.default.fileExists(atPath: installedHookURL.path) else {
+            return true
+        }
+        guard let bundled = bundledHookScript,
+              let bundledData = try? Data(contentsOf: bundled),
+              let installedData = try? Data(contentsOf: installedHookURL) else {
+            return false
+        }
+        return bundledData != installedData
     }
 
     // MARK: - Install / uninstall
