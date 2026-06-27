@@ -101,7 +101,9 @@ struct MenuView: View {
                     .padding(.vertical, 20)
             } else {
                 ForEach(store.sessions) { session in
-                    SessionRow(session: session)
+                    SessionRow(session: session) {
+                        store.clear(session)
+                    }
                 }
             }
 
@@ -165,6 +167,7 @@ struct HookSuccessRow: View {
 
 struct SessionRow: View {
     let session: Session
+    let onClear: () -> Void
 
     var body: some View {
         HStack(spacing: 10) {
@@ -192,6 +195,13 @@ struct SessionRow: View {
                 }
             }
             Spacer()
+            Button(action: onClear) {
+                Image(systemName: "xmark.circle")
+                    .imageScale(.small)
+            }
+            .buttonStyle(.borderless)
+            .foregroundStyle(.secondary)
+            .help("Clear this session")
         }
         .padding(.horizontal, 12)
         .padding(.vertical, 6)

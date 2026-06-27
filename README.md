@@ -126,7 +126,8 @@ uninstalling only ever removes Signal's own hooks.
 > (yellow) state in every Claude surface; Cursor has no equivalent event, so
 > Cursor sessions go red → green only. Codex exposes permission requests as a
 > hook event, but it does not currently document a session-end hook, so Codex
-> sessions are removed by Signal's staleness timeout if they are left green.
+> sessions are removed by Signal's shorter Codex-done staleness timeout if they
+> are left green.
 
 ## Which sessions are tracked
 
@@ -154,7 +155,9 @@ trust Signal's hooks so Codex can run them.
 - **State directory** — defaults to `~/.signal/sessions`. Override with the
   `SIGNAL_STATE_DIR` environment variable (honored by both the hook and the app).
 - **Staleness timeout** — sessions whose state file hasn't updated in 12 hours
-  are dropped, in case a session dies without firing `SessionEnd`.
+  are dropped, in case a session dies without firing `SessionEnd`. Done Codex
+  sessions are dropped after 30 minutes because Codex does not currently
+  document a session-end hook.
 
 ## Local data and privacy
 
@@ -162,9 +165,9 @@ Signal does not send session data over the network. The hook writes one JSON fil
 per live session under `~/.signal/sessions/`, containing the session id, status,
 project name, client tag, current working directory, transcript path, update time,
 and a short excerpt of the first user prompt. These files are removed when the
-session ends, or later by the staleness timeout if the agent exits without a
-normal end event. Codex sessions use the timeout path because Codex does not
-currently document a session-end hook event.
+session ends, later by the staleness timeout if the agent exits without a normal
+end event, or immediately if you clear a row from the menu. A cleared session can
+reappear if the agent emits another hook event.
 
 ## Tests
 
@@ -203,10 +206,11 @@ CI runs these on every push and before every release.
   copy to soften the rough edge.
 - **No auto-update.** Downloaded builds don't update themselves yet; grab new
   releases manually (Sparkle integration is a future option).
-- **Stale sessions linger up to 12h.** Without a heartbeat, Signal can't tell an
-  idle-but-alive session from a force-closed one, so dead sessions are pruned by
-  a timeout rather than instantly. Normal exits remove their circle immediately
-  via `SessionEnd`.
+- **Stale sessions can linger.** Without a heartbeat, Signal can't always tell
+  an idle-but-alive session from a force-closed one, so dead sessions are pruned
+  by a timeout rather than instantly. Normal Claude/Cursor exits remove their
+  circle immediately via `SessionEnd`; done Codex sessions use a 30-minute
+  timeout because Codex does not currently document a session-end hook.
 - **Settings writes aren't locked.** The installer reads, merges, and atomically
   writes `~/.claude/settings.json`, `~/.cursor/hooks.json`, and
   `~/.codex/hooks.json` (backing existing files up first). It does not hold a

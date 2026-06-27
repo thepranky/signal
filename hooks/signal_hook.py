@@ -70,12 +70,27 @@ def read_event() -> dict:
 
 def project_name(cwd: str, transcript_path: str = "") -> str:
     if cwd:
-        name = os.path.basename(os.path.normpath(cwd))
+        name = repo_root_name(cwd) or os.path.basename(os.path.normpath(cwd))
         return name or cwd
     # Some clients (notably Cursor's agent) fire hooks without a cwd. Fall back
     # to the project encoded in the transcript path so the session still gets a
     # meaningful label instead of "unknown".
     return project_from_transcript(transcript_path) or "unknown"
+
+
+def repo_root_name(cwd: str) -> str:
+    """Find a nearby git repository root without invoking git from the hook."""
+    if not cwd:
+        return ""
+    path = os.path.abspath(os.path.expanduser(cwd))
+    while True:
+        marker = os.path.join(path, ".git")
+        if os.path.isdir(marker) or os.path.isfile(marker):
+            return os.path.basename(path) or path
+        parent = os.path.dirname(path)
+        if parent == path:
+            return ""
+        path = parent
 
 
 def project_from_transcript(transcript_path: str) -> str:
@@ -244,6 +259,16 @@ def atomic_write(path: str, payload: dict) -> None:
         raise
 
 
+def read_existing_state(path: str) -> dict:
+    """Best-effort read of the previous state for stable labels."""
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError, TypeError):
+        return {}
+
+
 def main() -> int:
     if len(sys.argv) < 2 or sys.argv[1] not in VALID_STATUSES:
         # Misconfiguration: don't break the session, just no-op.
@@ -277,11 +302,16 @@ def main() -> int:
     cwd = event.get("cwd") or first_workspace_root(event)
     transcript_path = event.get("transcript_path") or ""
     meta = read_transcript_meta(transcript_path)
+    previous = read_existing_state(path)
+    previous_project = previous.get("project") if isinstance(previous.get("project"), str) else ""
+    previous_title = previous.get("title") if isinstance(previous.get("title"), str) else ""
+    project = (previous_project if previous_project and previous_project != "unknown"
+               else project_name(cwd, transcript_path))
     payload = {
         "session_id": session_id,
         "status": status,
-        "project": project_name(cwd, transcript_path),
-        "title": meta["title"],
+        "project": project,
+        "title": previous_title or meta["title"],
         "cwd": cwd,
         "transcript_path": transcript_path,
         "source": session_source(transcript_path, meta["entrypoint"],

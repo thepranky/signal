@@ -9,6 +9,7 @@ Run with:  python3 -m unittest discover -s tests
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -23,9 +24,7 @@ class HookTestCase(unittest.TestCase):
         self.state_dir = tempfile.mkdtemp(prefix="signal-test-")
 
     def tearDown(self):
-        for name in os.listdir(self.state_dir):
-            os.unlink(os.path.join(self.state_dir, name))
-        os.rmdir(self.state_dir)
+        shutil.rmtree(self.state_dir)
 
     def run_hook(self, status, event, source=None):
         """Invoke the hook; return its exit code."""
@@ -66,6 +65,27 @@ class HookTestCase(unittest.TestCase):
         self.assertEqual(data["cwd"], "/Users/bob/projects/my-app")
         self.assertEqual(data["session_id"], "sessA")
         self.assertIn("updated_at", data)
+
+    def test_project_uses_git_root_name_for_nested_cwd(self):
+        repo = os.path.join(self.state_dir, "repo")
+        nested = os.path.join(repo, "apps", "api")
+        os.makedirs(nested)
+        os.mkdir(os.path.join(repo, ".git"))
+
+        self.run_hook("running", {"session_id": "sessA", "cwd": nested})
+        self.assertEqual(self.state("sessA")["project"], "repo")
+
+    def test_project_label_stays_stable_across_cwd_changes(self):
+        repo = os.path.join(self.state_dir, "repo")
+        nested = os.path.join(repo, "apps", "api")
+        os.makedirs(nested)
+        os.mkdir(os.path.join(repo, ".git"))
+
+        self.run_hook("running", {"session_id": "sessA", "cwd": repo})
+        self.run_hook("running", {"session_id": "sessA", "cwd": nested})
+        data = self.state("sessA")
+        self.assertEqual(data["project"], "repo")
+        self.assertEqual(data["cwd"], nested)
 
     def test_status_transition_overwrites(self):
         self.run_hook("running", {"session_id": "sessA", "cwd": "/p/app"})

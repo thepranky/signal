@@ -8,7 +8,8 @@ final class SessionStore: ObservableObject {
     @Published private(set) var sessions: [Session] = []
 
     private let directory: URL
-    private let staleAfter: TimeInterval
+    private let defaultStaleAfter: TimeInterval
+    private let codexDoneStaleAfter: TimeInterval
     private var watcher: DirectoryWatcher?
     private var pruneTimer: Timer?
 
@@ -16,9 +17,11 @@ final class SessionStore: ObservableObject {
     ///   this many seconds is treated as dead (e.g. its terminal was force-closed
     ///   before `SessionEnd` could fire) and dropped.
     init(directory: URL = SessionStore.defaultDirectory,
-         staleAfter: TimeInterval = 12 * 60 * 60) {
+         staleAfter: TimeInterval = 12 * 60 * 60,
+         codexDoneStaleAfter: TimeInterval = 30 * 60) {
         self.directory = directory
-        self.staleAfter = staleAfter
+        self.defaultStaleAfter = staleAfter
+        self.codexDoneStaleAfter = codexDoneStaleAfter
         start()
     }
 
@@ -62,7 +65,7 @@ final class SessionStore: ObservableObject {
             guard let data = try? Data(contentsOf: url),
                   let session = try? decoder.decode(Session.self, from: data) else { continue }
 
-            if now - session.updatedAt > staleAfter {
+            if now - session.updatedAt > staleLimit(for: session) {
                 try? fm.removeItem(at: url)
                 continue
             }
@@ -77,6 +80,25 @@ final class SessionStore: ObservableObject {
         }
 
         sessions = loaded
+    }
+
+    func clear(_ session: Session) {
+        try? FileManager.default.removeItem(at: fileURL(for: session.sessionId))
+        reload()
+    }
+
+    private func staleLimit(for session: Session) -> TimeInterval {
+        if session.source == "codex" && session.status == .done {
+            return codexDoneStaleAfter
+        }
+        return defaultStaleAfter
+    }
+
+    private func fileURL(for sessionId: String) -> URL {
+        let safe = String(sessionId.map { char in
+            char.isLetter || char.isNumber || char == "-" || char == "_" ? char : nil
+        }.compactMap { $0 })
+        return directory.appendingPathComponent((safe.isEmpty ? "unknown" : safe) + ".json")
     }
 
     /// The most urgent status across all sessions, for the compact menu bar glyph.
