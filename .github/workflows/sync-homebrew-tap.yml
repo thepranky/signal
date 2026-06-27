@@ -3,7 +3,8 @@ name: Sync Homebrew tap
 # Mirror Casks/signal-agent.rb into thepranky/homebrew-signal so users can run:
 #   brew install --cask thepranky/signal/signal-agent
 # without an explicit tap URL. Edit the cask only in this repo; CI keeps the tap
-# in sync when Casks/ changes on master (typically after ./scripts/update-cask.sh).
+# in sync when Casks/ changes on master. Tagged releases also update the tap
+# directly from .github/workflows/release.yml.
 
 on:
   push:
@@ -43,8 +44,8 @@ jobs:
 
           Homebrew tap for [Signal](https://github.com/thepranky/signal).
 
-          This repository is synced automatically from the main repo when
-          `Casks/signal-agent.rb` changes. Do not edit the cask here by hand.
+          This repository is synced automatically from the main Signal repo.
+          Do not edit the cask here by hand.
 
           ```bash
           brew install --cask thepranky/signal/signal-agent
@@ -60,4 +61,4 @@ jobs:
             exit 0
           fi
           git commit -m "Sync signal-agent cask from thepranky/signal@${GITHUB_SHA::7}"
-          git push origin HEAD
+          git push origin HEAD:main

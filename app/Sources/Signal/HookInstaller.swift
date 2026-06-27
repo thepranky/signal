@@ -99,21 +99,22 @@ enum HookInstaller {
     private static func isClaudeInstalled() -> Bool {
         guard let settings = try? loadSettings(at: settingsURL),
               let hooks = settings["hooks"] as? [String: Any] else { return false }
-        for groups in hooks.values {
-            guard let groups = groups as? [[String: Any]] else { continue }
-            if groups.contains(where: isSignalGroup) { return true }
+        return managed.allSatisfy { entry in
+            guard let groups = hooks[entry.event] as? [[String: Any]] else { return false }
+            return groups.contains { group in
+                let matcher = group["matcher"] as? String
+                return matcher == entry.matcher && isSignalGroup(group, status: entry.status)
+            }
         }
-        return false
     }
 
     private static func isCursorInstalled() -> Bool {
         guard let settings = try? loadSettings(at: cursorSettingsURL),
               let hooks = settings["hooks"] as? [String: Any] else { return false }
-        for entries in hooks.values {
-            guard let entries = entries as? [[String: Any]] else { continue }
-            if entries.contains(where: isSignalCursorEntry) { return true }
+        return managedCursor.allSatisfy { entry in
+            guard let entries = hooks[entry.event] as? [[String: Any]] else { return false }
+            return entries.contains { isSignalCursorEntry($0, status: entry.status) }
         }
-        return false
     }
 
     /// If hooks are installed but the stable script went missing (e.g. ~/.signal
@@ -130,7 +131,10 @@ enum HookInstaller {
         guard bundledHookScript != nil else { throw InstallError.hookScriptMissing }
 
         var settings = try loadSettings(at: settingsURL)
+        var cursorSettings = try loadSettings(at: cursorSettingsURL)
+
         stripSignalHooks(&settings)
+        stripCursorSignalHooks(&cursorSettings)
 
         var hooks = (settings["hooks"] as? [String: Any]) ?? [:]
         for entry in managed {
@@ -144,28 +148,18 @@ enum HookInstaller {
         }
         settings["hooks"] = hooks
 
+        if cursorSettings["version"] == nil { cursorSettings["version"] = 1 }
+        var cursorHooks = (cursorSettings["hooks"] as? [String: Any]) ?? [:]
+        for entry in managedCursor {
+            var entries = (cursorHooks[entry.event] as? [[String: Any]]) ?? []
+            entries.append(["command": command(for: entry.status)])
+            cursorHooks[entry.event] = entries
+        }
+        cursorSettings["hooks"] = cursorHooks
+
         try copyHookToStableLocation()
         try writeSettings(settings, to: settingsURL)
-        try installCursorHooks()
-    }
-
-    /// Merge Signal's hooks into Cursor's native `~/.cursor/hooks.json`. Cursor
-    /// uses a flatter shape than Claude (each event maps to an array of
-    /// `{ "command": ... }` entries) and a top-level schema `version`.
-    private static func installCursorHooks() throws {
-        var settings = try loadSettings(at: cursorSettingsURL)
-        stripCursorSignalHooks(&settings)
-
-        if settings["version"] == nil { settings["version"] = 1 }
-        var hooks = (settings["hooks"] as? [String: Any]) ?? [:]
-        for entry in managedCursor {
-            var entries = (hooks[entry.event] as? [[String: Any]]) ?? []
-            entries.append(["command": command(for: entry.status)])
-            hooks[entry.event] = entries
-        }
-        settings["hooks"] = hooks
-
-        try writeSettings(settings, to: cursorSettingsURL)
+        try writeSettings(cursorSettings, to: cursorSettingsURL)
     }
 
     static func uninstall() throws {
@@ -189,9 +183,21 @@ enum HookInstaller {
         return hooks.contains { ($0["command"] as? String)?.contains(marker) ?? false }
     }
 
+    private static func isSignalGroup(_ group: [String: Any], status: String) -> Bool {
+        guard let hooks = group["hooks"] as? [[String: Any]] else { return false }
+        return hooks.contains {
+            guard let command = $0["command"] as? String else { return false }
+            return command == HookInstaller.command(for: status)
+        }
+    }
+
     /// A Cursor hook entry is a flat `{ "command": ... }`; ours carries the marker.
     private static func isSignalCursorEntry(_ entry: [String: Any]) -> Bool {
         (entry["command"] as? String)?.contains(marker) ?? false
+    }
+
+    private static func isSignalCursorEntry(_ entry: [String: Any], status: String) -> Bool {
+        (entry["command"] as? String) == command(for: status)
     }
 
     private static func stripSignalHooks(_ settings: inout [String: Any]) {

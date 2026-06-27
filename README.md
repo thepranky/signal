@@ -57,14 +57,6 @@ brew install --cask thepranky/signal/signal-agent
 
 Same setup step in the menu. To update: `brew upgrade --cask signal-agent`.
 
-If you previously installed the old `signal` cask, switch over:
-
-```bash
-brew uninstall --cask signal 2>/dev/null
-brew untap thepranky/signal 2>/dev/null
-brew install --cask thepranky/signal/signal-agent
-```
-
 ## Install (Option 3: download)
 
 1. Download `Signal-vX.Y.Z.dmg` from [Releases](../../releases) and open it.
@@ -92,14 +84,26 @@ Requires Xcode (not just Command Line Tools). Optionally run `./build-dmg.sh` to
 python3 install/install.py --dry-run
 ```
 
-### Uninstall the hooks
+### Uninstall
+
+To remove the app but leave hook settings in place:
+
+```bash
+brew uninstall --cask signal-agent
+```
+
+To fully remove Signal, remove its hooks first, then remove the app and local
+state:
 
 ```bash
 python3 install/install.py --uninstall
+brew uninstall --cask signal-agent
+rm -rf ~/.signal
 ```
 
 This removes only Signal's hooks and leaves the rest of your Claude Code and
-Cursor settings untouched.
+Cursor settings untouched. If you installed from a DMG instead of Homebrew,
+delete `/Applications/Signal.app` in place of the `brew uninstall` command.
 
 ## Status mapping
 
@@ -142,10 +146,19 @@ the workspace root (or the project encoded in the transcript path) to label them
 - **Staleness timeout** — sessions whose state file hasn't updated in 12 hours
   are dropped, in case a session dies without firing `SessionEnd`.
 
+## Local data and privacy
+
+Signal does not send session data over the network. The hook writes one JSON file
+per live session under `~/.signal/sessions/`, containing the session id, status,
+project name, client tag, current working directory, transcript path, update time,
+and a short excerpt of the first user prompt. These files are removed when the
+session ends, or later by the staleness timeout if the agent exits without a
+normal end event.
+
 ## Tests
 
-The hook handler is the only piece with real logic, so that's what's tested
-(stdlib `unittest`, no dependencies):
+The hook handler and Python installer are covered with stdlib `unittest`
+subprocess tests, so the tests exercise the same CLI/stdin contract users hit:
 
 ```bash
 python3 -m unittest discover -s tests -v
@@ -159,20 +172,16 @@ CI runs these on every push and before every release.
   on a macOS runner for every push/PR, uploading the build as a downloadable
   artifact. This means neither maintainers nor users need Xcode locally.
 - **Release** (`.github/workflows/release.yml`) builds and attaches
-  `Signal-<tag>.zip` to a GitHub Release whenever you push a `v*` tag, e.g.:
+  `Signal-<tag>.zip` and `Signal-<tag>.dmg` to a GitHub Release whenever you
+  push a `v*` tag, then updates the Homebrew tap with the matching cask version
+  and DMG checksum, e.g.:
   ```bash
   git tag v0.1.0 && git push origin v0.1.0
   ```
-  Then bump the cask and push — CI syncs it to the Homebrew tap automatically:
-  ```bash
-  ./scripts/update-cask.sh 0.1.0
-  git add Casks/signal-agent.rb && git commit -m "Bump Homebrew cask to v0.1.0."
-  git push origin master
-  ```
-  The tap mirror (`thepranky/homebrew-signal`) is updated by
-  `.github/workflows/sync-homebrew-tap.yml`. Set the `HOMEBREW_TAP_TOKEN` repo
-  secret (PAT with `contents:write` on `homebrew-signal`) and keep that mirror
-  repo **unarchived** so pushes succeed.
+  Set the `HOMEBREW_TAP_TOKEN` repo secret (PAT with `contents:write` on
+  `thepranky/homebrew-signal`) and keep that mirror repo **unarchived** so
+  pushes succeed. The separate `.github/workflows/sync-homebrew-tap.yml` workflow
+  only mirrors manual changes to `Casks/signal-agent.rb`.
 
 ## Known limitations
 
@@ -205,7 +214,7 @@ signal/
 │   ├── build-app.sh         # build + ad-hoc sign Signal.app
 │   └── build-dmg.sh         # package Signal.app into a .dmg
 ├── scripts/install.sh       # one-line curl installer (no quarantine)
-├── scripts/update-cask.sh   # bump the Homebrew cask after a release
+├── scripts/update-cask.sh   # manually refresh the repo-local Homebrew cask
 ├── Casks/signal-agent.rb    # Homebrew cask (tap this repo directly)
 ├── .github/workflows/       # CI, releases, Homebrew tap sync
 ├── README.md

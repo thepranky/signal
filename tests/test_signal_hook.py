@@ -214,6 +214,40 @@ class HookTestCase(unittest.TestCase):
         self.assertEqual(data["title"], "Fix the failing test")
         self.assertEqual(data["source"], "vscode")
 
+    def test_representative_claude_code_payload(self):
+        transcript = self.write_transcript("claude-realistic.jsonl", [
+            {"type": "system", "entrypoint": "claude-desktop"},
+            {"type": "user",
+             "message": {"role": "user", "content": [{"type": "text", "text": "Update docs"}]}},
+        ])
+        self.run_hook("running", {
+            "hook_event_name": "UserPromptSubmit",
+            "session_id": "claude-session-1",
+            "cwd": "/Users/alice/projects/signal",
+            "transcript_path": transcript,
+        })
+        data = self.state("claude-session-1")
+        self.assertEqual(data["status"], "running")
+        self.assertEqual(data["project"], "signal")
+        self.assertEqual(data["title"], "Update docs")
+        self.assertEqual(data["source"], "claude_desktop")
+
+    def test_representative_cursor_native_payload(self):
+        self.run_hook("running", {
+            "event_name": "preToolUse",
+            "conversation_id": "cursor-conversation-1",
+            "cursor_version": "1.7.2",
+            "workspace_roots": [
+                "/Users/alice/projects/signal",
+                "/Users/alice/other",
+            ],
+        })
+        data = self.state("cursor-conversation-1")
+        self.assertEqual(data["status"], "running")
+        self.assertEqual(data["project"], "signal")
+        self.assertEqual(data["cwd"], "/Users/alice/projects/signal")
+        self.assertEqual(data["source"], "cursor")
+
     def test_title_unwraps_cursor_user_query(self):
         wrapped = ("<timestamp>Fri</timestamp>\n<user_query>\n"
                    "Make the button blue\n</user_query>")

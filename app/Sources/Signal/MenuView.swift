@@ -27,20 +27,29 @@ struct MenuBarLabel: View {
 @MainActor
 final class HookState: ObservableObject {
     @Published var installed: Bool = true
-    @Published var message: String?
+    @Published var errorMessage: String?
+    @Published var showSuccess: Bool = false
 
     func refresh() {
         HookInstaller.repairIfNeeded()
         installed = HookInstaller.isInstalled()
+        if installed { errorMessage = nil }
     }
 
     func install() {
         do {
             try HookInstaller.install()
             installed = true
-            message = "Hooks installed. Start a session in Claude Code or Cursor to begin tracking."
+            errorMessage = nil
+            showSuccess = true
+            Task { @MainActor [weak self] in
+                try? await Task.sleep(nanoseconds: 2_500_000_000)
+                self?.showSuccess = false
+            }
         } catch {
-            message = error.localizedDescription
+            installed = false
+            showSuccess = false
+            errorMessage = error.localizedDescription
         }
     }
 }
@@ -71,12 +80,8 @@ struct MenuView: View {
             if !hooks.installed {
                 SetupBanner(hooks: hooks)
                 Divider()
-            } else if let message = hooks.message {
-                Text(message)
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 12)
-                    .padding(.vertical, 6)
+            } else if hooks.showSuccess {
+                HookSuccessRow()
                 Divider()
             }
 
@@ -105,7 +110,7 @@ struct MenuView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
         }
-        .frame(width: 300)
+        .frame(width: 300, maxHeight: .infinity, alignment: .topLeading)
         .onAppear { hooks.refresh() }
     }
 }
@@ -117,25 +122,30 @@ struct SetupBanner: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
-            Text("Finish setup")
-                .font(.subheadline.weight(.semibold))
-            Text("Signal needs to add hooks so it can see your agent sessions across Claude Code and Cursor.")
-                .font(.caption)
-                .foregroundStyle(.secondary)
-                .fixedSize(horizontal: false, vertical: true)
-            if let message = hooks.message {
+            Button("Set up hooks") { hooks.install() }
+                .buttonStyle(.borderedProminent)
+                .controlSize(.small)
+            if let message = hooks.errorMessage {
                 Text(message)
                     .font(.caption)
                     .foregroundStyle(.red)
                     .fixedSize(horizontal: false, vertical: true)
             }
-            Button("Set up hooks") { hooks.install() }
-                .buttonStyle(.borderedProminent)
-                .controlSize(.small)
         }
         .frame(maxWidth: .infinity, alignment: .leading)
         .padding(.horizontal, 12)
         .padding(.vertical, 10)
+    }
+}
+
+struct HookSuccessRow: View {
+    var body: some View {
+        Label("Hooks installed", systemImage: "checkmark.circle.fill")
+            .font(.caption.weight(.semibold))
+            .foregroundStyle(.green)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
     }
 }
 

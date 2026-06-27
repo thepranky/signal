@@ -1,7 +1,8 @@
 #!/usr/bin/env bash
-# Update Casks/signal-agent.rb to a released version by fetching its DMG and
-# recomputing the checksum. Run after a release is published, then commit and
-# push — CI syncs the cask to thepranky/homebrew-signal automatically.
+# Manually update Casks/signal-agent.rb to a released version by fetching its
+# DMG and recomputing the checksum. Normal tagged releases update the
+# thepranky/homebrew-signal tap directly from .github/workflows/release.yml;
+# this helper is for backfills or manual cask edits in this repo.
 #
 #   ./scripts/update-cask.sh 0.1.6
 set -euo pipefail
@@ -14,7 +15,8 @@ fi
 VERSION="${VERSION#v}"
 
 REPO="thepranky/signal"
-CASK="$(cd "$(dirname "$0")/.." && pwd)/Casks/signal-agent.rb"
+ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+CASK="$ROOT/Casks/signal-agent.rb"
 URL="https://github.com/$REPO/releases/download/v$VERSION/Signal-v$VERSION.dmg"
 
 TMP="$(mktemp -d)"
@@ -26,8 +28,6 @@ SHA="$(shasum -a 256 "$TMP/Signal.dmg" | cut -d' ' -f1)"
 
 echo "version $VERSION  sha256 $SHA"
 
-# Portable in-place edits (BSD/macOS sed needs the empty backup arg).
-sed -i '' "s/^  version \".*\"/  version \"$VERSION\"/" "$CASK"
-sed -i '' "s/^  sha256 \".*\"/  sha256 \"$SHA\"/" "$CASK"
+"$ROOT/scripts/write-cask.sh" "$VERSION" "$SHA" "$CASK"
 
 echo "Updated $CASK"
