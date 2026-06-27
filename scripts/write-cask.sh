@@ -23,7 +23,7 @@ cask "signal-agent" do
 
   url "https://github.com/thepranky/signal/releases/download/v#{version}/Signal-v#{version}.dmg"
   name "Signal"
-  desc "Menu bar traffic-light monitor for AI coding agent sessions"
+  desc "Menu bar monitor for Claude, Cursor, and Codex agent sessions"
   homepage "https://github.com/thepranky/signal"
 
   # Signal is ad-hoc signed, not notarized; let Homebrew clear quarantine.
@@ -41,7 +41,8 @@ cask "signal-agent" do
   caveats <<~EOS
     Signal is a menu bar app (no Dock icon). After installing, click its icon
     in the menu bar (top-right), then "Set up hooks" to begin tracking your
-    agent sessions.
+    agent sessions. For Codex, run /hooks and trust Signal's hooks if Codex
+    prompts you.
   EOS
 end
 EOF

@@ -2,7 +2,7 @@
 
 A lightweight macOS menu bar app that monitors all your active **AI coding
 agent** sessions with a traffic-light system — across the Claude Code
-CLI, Claude desktop app, Cursor's agent, and the VS Code extension, all at
+CLI, Claude desktop app, Cursor's agent, OpenAI Codex, and the VS Code extension, all at
 once. Each session shows an excerpt of its first prompt and a tag for the client
 it came from.
 
@@ -17,7 +17,7 @@ When a session ends, its circle disappears.
 ## How it works
 
 ```
-Claude Code + Cursor
+Claude Code + Cursor + Codex
    │  
    ▼
 signal_hook.py   ──writes──▶   ~/.signal/sessions/<session_id>.json
@@ -34,7 +34,8 @@ Plain JSON on disk — no daemon, no network.
 ## Requirements
 
 - macOS 13 or later.
-- [Claude Code](https://claude.com/claude-code) and/or [Cursor](https://cursor.com) installed.
+- [Claude Code](https://claude.com/claude-code), [Cursor](https://cursor.com),
+  and/or [Codex](https://developers.openai.com/codex) installed.
 
 ## Install (Option 1: one line — recommended)
 
@@ -101,18 +102,19 @@ brew uninstall --cask signal-agent
 rm -rf ~/.signal
 ```
 
-This removes only Signal's hooks and leaves the rest of your Claude Code and
-Cursor settings untouched. If you installed from a DMG instead of Homebrew,
-delete `/Applications/Signal.app` in place of the `brew uninstall` command.
+This removes only Signal's hooks and leaves the rest of your Claude Code,
+Cursor, and Codex settings untouched. If you installed from a DMG instead of
+Homebrew, delete `/Applications/Signal.app` in place of the `brew uninstall`
+command.
 
 ## Status mapping
 
-| Color | Meaning | Claude Code event(s) | Cursor event(s) |
-|-------|---------|----------------------|-----------------|
-| 🔴 Red | Actively running | `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure` | `beforeSubmitPrompt`, `preToolUse`, `postToolUse`, `postToolUseFailure` |
-| 🟡 Yellow | Waiting for your approval | `Notification` (`permission_prompt`), `PermissionRequest` | — |
-| 🟢 Green | Finished turn, idle | `Stop`, `StopFailure` | `stop` |
-| (no circle) | Session ended | `SessionEnd`, or staleness timeout | `sessionEnd`, or staleness timeout |
+| Color | Meaning | Claude Code event(s) | Cursor event(s) | Codex event(s) |
+|-------|---------|----------------------|-----------------|----------------|
+| 🔴 Red | Actively running | `UserPromptSubmit`, `PreToolUse`, `PostToolUse`, `PostToolUseFailure` | `beforeSubmitPrompt`, `preToolUse`, `postToolUse`, `postToolUseFailure` | `UserPromptSubmit`, `PreToolUse`, `PostToolUse` |
+| 🟡 Yellow | Waiting for your approval | `Notification` (`permission_prompt`), `PermissionRequest` | — | `PermissionRequest` |
+| 🟢 Green | Finished turn, idle | `Stop`, `StopFailure` | `stop` | `Stop` |
+| (no circle) | Session ended | `SessionEnd`, or staleness timeout | `sessionEnd`, or staleness timeout | Staleness timeout |
 
 The installed hooks are copied to a stable `~/.signal/signal_hook.py` and tagged
 with a `SIGNAL_HOOK=1` marker, so moving the app/repo doesn't break them and
@@ -121,30 +123,41 @@ uninstalling only ever removes Signal's own hooks.
 > **Note:** agents can't natively distinguish "finished the whole task" from
 > "finished by asking you a clarifying question" — both just end a turn, so both
 > show green. Only Claude Code permission prompts surface as a distinct "waiting"
-> (yellow) state; Cursor has no equivalent event, so Cursor sessions go red →
-> green only.
+> (yellow) state in every Claude surface; Cursor has no equivalent event, so
+> Cursor sessions go red → green only. Codex exposes permission requests as a
+> hook event, but it does not currently document a session-end hook, so Codex
+> sessions are removed by Signal's shorter Codex-done staleness timeout if they
+> are left green.
 
 ## Which sessions are tracked
 
-Signal installs hooks into both Claude Code's global `~/.claude/settings.json`
-and Cursor's native `~/.cursor/hooks.json`, so it tracks the **terminal CLI, the
-VS Code extension, the Claude desktop app, and Cursor's agent**. Each session is
-shown with a short excerpt of its first prompt, plus a client tag:
+Signal installs hooks into Claude Code's global `~/.claude/settings.json`,
+Cursor's native `~/.cursor/hooks.json`, and Codex's user-level
+`~/.codex/hooks.json`, so it tracks the **terminal CLI, the VS Code extension,
+the Claude desktop app, Cursor's agent, and local Codex sessions**. Each session
+is shown with a short excerpt of its first prompt, plus a client tag:
 
 - **Claude** — the Claude Code CLI.
 - **Cursor** — Cursor's built-in agent.
+- **Codex** — OpenAI Codex local sessions.
 - **VS Code** / **Claude Desktop** — detected from the transcript's
   `entrypoint` field.
 
 Cursor's hook events don't include a working directory, so Signal falls back to
 the workspace root (or the project encoded in the transcript path) to label them.
 
+Codex treats newly added user command hooks as untrusted until you review them.
+After clicking **Set up hooks**, open Codex and run `/hooks` if prompted, then
+trust Signal's hooks so Codex can run them.
+
 ## Configuration
 
 - **State directory** — defaults to `~/.signal/sessions`. Override with the
   `SIGNAL_STATE_DIR` environment variable (honored by both the hook and the app).
 - **Staleness timeout** — sessions whose state file hasn't updated in 12 hours
-  are dropped, in case a session dies without firing `SessionEnd`.
+  are dropped, in case a session dies without firing `SessionEnd`. Done Codex
+  sessions are dropped after 30 minutes because Codex does not currently
+  document a session-end hook.
 
 ## Local data and privacy
 
@@ -152,8 +165,9 @@ Signal does not send session data over the network. The hook writes one JSON fil
 per live session under `~/.signal/sessions/`, containing the session id, status,
 project name, client tag, current working directory, transcript path, update time,
 and a short excerpt of the first user prompt. These files are removed when the
-session ends, or later by the staleness timeout if the agent exits without a
-normal end event.
+session ends, later by the staleness timeout if the agent exits without a normal
+end event, or immediately if you clear a row from the menu. A cleared session can
+reappear if the agent emits another hook event.
 
 ## Tests
 
@@ -192,20 +206,22 @@ CI runs these on every push and before every release.
   copy to soften the rough edge.
 - **No auto-update.** Downloaded builds don't update themselves yet; grab new
   releases manually (Sparkle integration is a future option).
-- **Stale sessions linger up to 12h.** Without a heartbeat, Signal can't tell an
-  idle-but-alive session from a force-closed one, so dead sessions are pruned by
-  a timeout rather than instantly. Normal exits remove their circle immediately
-  via `SessionEnd`.
+- **Stale sessions can linger.** Without a heartbeat, Signal can't always tell
+  an idle-but-alive session from a force-closed one, so dead sessions are pruned
+  by a timeout rather than instantly. Normal Claude/Cursor exits remove their
+  circle immediately via `SessionEnd`; done Codex sessions use a 30-minute
+  timeout because Codex does not currently document a session-end hook.
 - **Settings writes aren't locked.** The installer reads, merges, and atomically
-  writes `~/.claude/settings.json` (backing it up first). It does not hold a file
-  lock, so a simultaneous hand-edit during install could be lost.
+  writes `~/.claude/settings.json`, `~/.cursor/hooks.json`, and
+  `~/.codex/hooks.json` (backing existing files up first). It does not hold a
+  file lock, so a simultaneous hand-edit during install could be lost.
 
 ## Project layout
 
 ```
 signal/
 ├── hooks/signal_hook.py     # records session status to a state file (stdlib only)
-├── install/install.py       # merges hooks into ~/.claude/settings.json + ~/.cursor/hooks.json
+├── install/install.py       # merges hooks into Claude, Cursor, and Codex settings
 ├── tests/test_signal_hook.py
 ├── app/                     # SwiftUI MenuBarExtra menu bar app
 │   ├── Package.swift

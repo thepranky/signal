@@ -1,13 +1,13 @@
 import Foundation
 
 /// Installs, detects, and removes Signal's hooks by editing the user's global
-/// ~/.claude/settings.json — the hook system that Claude Code (CLI, VS Code,
-/// Claude Desktop) and Cursor's agent all fire. This mirrors install/install.py
-/// so a downloaded app can set itself up with one click, no terminal or repo clone.
+/// Claude, Cursor, and Codex hook files. This mirrors install/install.py so a
+/// downloaded app can set itself up with one click, no terminal or repo clone.
 enum HookInstaller {
 
     enum InstallError: LocalizedError {
         case hookScriptMissing
+        case noSupportedProviders
         case settingsUnreadable
         case writeFailed(String)
 
@@ -15,10 +15,13 @@ enum HookInstaller {
             switch self {
             case .hookScriptMissing:
                 return "The bundled hook script is missing from Signal.app."
+            case .noSupportedProviders:
+                return "No Claude, Cursor, or Codex config directories were found. Open at least one supported agent, then try again."
             case .settingsUnreadable:
                 return "A hooks settings file (~/.claude/settings.json or "
-                     + "~/.cursor/hooks.json) exists but isn't valid JSON. Fix or "
-                     + "remove it, then try again — Signal won't overwrite it."
+                     + "~/.cursor/hooks.json or ~/.codex/hooks.json) exists but "
+                     + "isn't valid JSON. Fix or remove it, then try again — "
+                     + "Signal won't overwrite it."
             case .writeFailed(let why):
                 return "Could not update settings: \(why)"
             }
@@ -51,6 +54,17 @@ enum HookInstaller {
         ("sessionEnd", "end"),
     ]
 
+    /// Codex user hooks use the same nested shape as Claude Code. Codex does
+    /// not document a session-end event for hooks today, so Codex sessions age
+    /// out via Signal's normal staleness timeout.
+    private static let managedCodex: [(event: String, matcher: String?, status: String)] = [
+        ("UserPromptSubmit", nil, "running"),
+        ("PreToolUse", "*", "running"),
+        ("PostToolUse", "*", "running"),
+        ("PermissionRequest", nil, "waiting"),
+        ("Stop", nil, "done"),
+    ]
+
     /// Unique token embedded in every command we install, so we identify and
     /// remove only our own hooks (never a user's unrelated hook).
     private static let marker = "SIGNAL_HOOK=1"
@@ -68,6 +82,17 @@ enum HookInstaller {
             .appendingPathComponent(".cursor/hooks.json")
     }
 
+    /// Codex's user-level hooks file. Keep the first implementation
+    /// intentionally simple: always target the documented default.
+    static var codexHooksURL: URL {
+        FileManager.default.homeDirectoryForCurrentUser
+            .appendingPathComponent(".codex/hooks.json")
+    }
+
+    private static var claudeDirectoryURL: URL { settingsURL.deletingLastPathComponent() }
+    private static var cursorDirectoryURL: URL { cursorSettingsURL.deletingLastPathComponent() }
+    private static var codexDirectoryURL: URL { codexHooksURL.deletingLastPathComponent() }
+
     private static var signalHome: URL {
         FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".signal")
     }
@@ -83,17 +108,22 @@ enum HookInstaller {
         Bundle.main.url(forResource: "signal_hook", withExtension: "py")
     }
 
-    private static func command(for status: String) -> String {
-        "\(marker) /usr/bin/env python3 \"\(installedHookURL.path)\" \(status)"
+    private static func command(for status: String, source: String = "") -> String {
+        let suffix = source.isEmpty ? "" : " \(source)"
+        return "\(marker) /usr/bin/env python3 \"\(installedHookURL.path)\" \(status)\(suffix)"
     }
 
     // MARK: - Detection / repair
 
-    /// True only when Signal is wired into both Claude Code and Cursor, so an
-    /// existing Claude-only install is re-offered the one-click setup to add the
-    /// Cursor hooks.
+    /// True when Signal is wired into every provider that appears to be present
+    /// on this machine. Users may have any subset of Claude, Cursor, and Codex.
     static func isInstalled() -> Bool {
-        isClaudeInstalled() && isCursorInstalled()
+        let checks: [() -> Bool] = [
+            isProviderDirectoryPresent(claudeDirectoryURL) ? isClaudeInstalled : nil,
+            isProviderDirectoryPresent(cursorDirectoryURL) ? isCursorInstalled : nil,
+            isProviderDirectoryPresent(codexDirectoryURL) ? isCodexInstalled : nil,
+        ].compactMap { $0 }
+        return !checks.isEmpty && checks.allSatisfy { $0() }
     }
 
     private static func isClaudeInstalled() -> Bool {
@@ -117,6 +147,19 @@ enum HookInstaller {
         }
     }
 
+    private static func isCodexInstalled() -> Bool {
+        guard let settings = try? loadSettings(at: codexHooksURL),
+              let hooks = settings["hooks"] as? [String: Any] else { return false }
+        return managedCodex.allSatisfy { entry in
+            guard let groups = hooks[entry.event] as? [[String: Any]] else { return false }
+            return groups.contains { group in
+                let matcher = group["matcher"] as? String
+                return matcher == entry.matcher
+                    && isSignalGroup(group, status: entry.status, source: "codex")
+            }
+        }
+    }
+
     /// If hooks are installed but the stable script went missing (e.g. ~/.signal
     /// was cleaned), restore it so the installed commands don't fail.
     static func repairIfNeeded() {
@@ -130,42 +173,76 @@ enum HookInstaller {
     static func install() throws {
         guard bundledHookScript != nil else { throw InstallError.hookScriptMissing }
 
-        var settings = try loadSettings(at: settingsURL)
-        var cursorSettings = try loadSettings(at: cursorSettingsURL)
+        let installClaude = isProviderDirectoryPresent(claudeDirectoryURL)
+        let installCursor = isProviderDirectoryPresent(cursorDirectoryURL)
+        let installCodex = isProviderDirectoryPresent(codexDirectoryURL)
+
+        guard installClaude || installCursor || installCodex else {
+            throw InstallError.noSupportedProviders
+        }
+
+        var settings = installClaude ? try loadSettings(at: settingsURL) : [:]
+        var cursorSettings = installCursor ? try loadSettings(at: cursorSettingsURL) : [:]
+        var codexHooksSettings = installCodex ? try loadSettings(at: codexHooksURL) : [:]
 
         stripSignalHooks(&settings)
         stripCursorSignalHooks(&cursorSettings)
+        stripSignalHooks(&codexHooksSettings)
 
-        var hooks = (settings["hooks"] as? [String: Any]) ?? [:]
-        for entry in managed {
-            var group: [String: Any] = [
-                "hooks": [["type": "command", "command": command(for: entry.status)]]
-            ]
-            if let matcher = entry.matcher { group["matcher"] = matcher }
-            var groups = (hooks[entry.event] as? [[String: Any]]) ?? []
-            groups.append(group)
-            hooks[entry.event] = groups
+        if installClaude {
+            var hooks = (settings["hooks"] as? [String: Any]) ?? [:]
+            for entry in managed {
+                var group: [String: Any] = [
+                    "hooks": [["type": "command", "command": command(for: entry.status)]]
+                ]
+                if let matcher = entry.matcher { group["matcher"] = matcher }
+                var groups = (hooks[entry.event] as? [[String: Any]]) ?? []
+                groups.append(group)
+                hooks[entry.event] = groups
+            }
+            settings["hooks"] = hooks
         }
-        settings["hooks"] = hooks
 
-        if cursorSettings["version"] == nil { cursorSettings["version"] = 1 }
-        var cursorHooks = (cursorSettings["hooks"] as? [String: Any]) ?? [:]
-        for entry in managedCursor {
-            var entries = (cursorHooks[entry.event] as? [[String: Any]]) ?? []
-            entries.append(["command": command(for: entry.status)])
-            cursorHooks[entry.event] = entries
+        if installCursor {
+            if cursorSettings["version"] == nil { cursorSettings["version"] = 1 }
+            var cursorHooks = (cursorSettings["hooks"] as? [String: Any]) ?? [:]
+            for entry in managedCursor {
+                var entries = (cursorHooks[entry.event] as? [[String: Any]]) ?? []
+                entries.append(["command": command(for: entry.status)])
+                cursorHooks[entry.event] = entries
+            }
+            cursorSettings["hooks"] = cursorHooks
         }
-        cursorSettings["hooks"] = cursorHooks
+
+        if installCodex {
+            var codexHooks = (codexHooksSettings["hooks"] as? [String: Any]) ?? [:]
+            for entry in managedCodex {
+                var group: [String: Any] = [
+                    "hooks": [[
+                        "type": "command",
+                        "command": command(for: entry.status, source: "codex"),
+                    ]]
+                ]
+                if let matcher = entry.matcher { group["matcher"] = matcher }
+                var groups = (codexHooks[entry.event] as? [[String: Any]]) ?? []
+                groups.append(group)
+                codexHooks[entry.event] = groups
+            }
+            codexHooksSettings["hooks"] = codexHooks
+        }
 
         try copyHookToStableLocation()
-        try writeSettings(settings, to: settingsURL)
-        try writeSettings(cursorSettings, to: cursorSettingsURL)
+        if installClaude { try writeSettings(settings, to: settingsURL) }
+        if installCursor { try writeSettings(cursorSettings, to: cursorSettingsURL) }
+        if installCodex { try writeSettings(codexHooksSettings, to: codexHooksURL) }
     }
 
     static func uninstall() throws {
-        var settings = try loadSettings(at: settingsURL)
-        stripSignalHooks(&settings)
-        try writeSettings(settings, to: settingsURL)
+        if FileManager.default.fileExists(atPath: settingsURL.path) {
+            var settings = try loadSettings(at: settingsURL)
+            stripSignalHooks(&settings)
+            try writeSettings(settings, to: settingsURL)
+        }
 
         // Only rewrite Cursor's file if it already exists, so uninstalling
         // never creates an empty hooks.json for users who never had Cursor.
@@ -173,6 +250,11 @@ enum HookInstaller {
             var cursor = try loadSettings(at: cursorSettingsURL)
             stripCursorSignalHooks(&cursor)
             try writeSettings(cursor, to: cursorSettingsURL)
+        }
+        if FileManager.default.fileExists(atPath: codexHooksURL.path) {
+            var codex = try loadSettings(at: codexHooksURL)
+            stripSignalHooks(&codex)
+            try writeSettings(codex, to: codexHooksURL)
         }
     }
 
@@ -183,11 +265,13 @@ enum HookInstaller {
         return hooks.contains { ($0["command"] as? String)?.contains(marker) ?? false }
     }
 
-    private static func isSignalGroup(_ group: [String: Any], status: String) -> Bool {
+    private static func isSignalGroup(
+        _ group: [String: Any], status: String, source: String = ""
+    ) -> Bool {
         guard let hooks = group["hooks"] as? [[String: Any]] else { return false }
         return hooks.contains {
             guard let command = $0["command"] as? String else { return false }
-            return command == HookInstaller.command(for: status)
+            return command == HookInstaller.command(for: status, source: source)
         }
     }
 
@@ -198,6 +282,12 @@ enum HookInstaller {
 
     private static func isSignalCursorEntry(_ entry: [String: Any], status: String) -> Bool {
         (entry["command"] as? String) == command(for: status)
+    }
+
+    private static func isProviderDirectoryPresent(_ url: URL) -> Bool {
+        var isDirectory: ObjCBool = false
+        return FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory)
+            && isDirectory.boolValue
     }
 
     private static func stripSignalHooks(_ settings: inout [String: Any]) {

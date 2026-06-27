@@ -1,12 +1,12 @@
 #!/usr/bin/env python3
 """Install (or uninstall) Signal's hooks.
 
-Merges Signal's traffic-light hooks into both Claude Code's
-~/.claude/settings.json (used by the Claude Code CLI, VS Code, and Claude
-Desktop) and Cursor's native ~/.cursor/hooks.json, without clobbering any hooks
-you already have. Installing Cursor's native hooks means Cursor tracking doesn't
-depend on Cursor's optional Claude-compatibility bridge. Re-running is safe and
-idempotent.
+Merges Signal's traffic-light hooks into Claude Code's ~/.claude/settings.json
+(used by the Claude Code CLI, VS Code, and Claude Desktop), Cursor's native
+~/.cursor/hooks.json, and Codex's ~/.codex/hooks.json, without clobbering any
+hooks you already have. Installing Cursor's native hooks means Cursor tracking
+doesn't depend on Cursor's optional Claude-compatibility bridge. Re-running is
+safe and idempotent.
 
 Usage:
     python3 install/install.py            # install / update
@@ -28,6 +28,9 @@ SETTINGS_PATH = os.path.expanduser("~/.claude/settings.json")
 # Cursor's native hooks file, so Cursor tracking doesn't rely on Cursor's
 # optional Claude-compatibility bridge being enabled.
 CURSOR_SETTINGS_PATH = os.path.expanduser("~/.cursor/hooks.json")
+# Codex's user-level hooks file. Keep the first implementation intentionally
+# simple: always target the documented default, ~/.codex/hooks.json.
+CODEX_HOOKS_PATH = os.path.expanduser("~/.codex/hooks.json")
 SIGNAL_HOME = os.path.expanduser("~/.signal")
 STATE_DIR = os.path.join(SIGNAL_HOME, "sessions")
 # The hook is copied to a stable location so the installed commands keep working
@@ -63,11 +66,23 @@ MANAGED_CURSOR_HOOKS = [
     ("sessionEnd", "end"),
 ]
 
+# Codex user hooks use the same nested shape as Claude Code. Codex does not
+# document a session-end event for hooks today, so Codex sessions age out via
+# Signal's normal staleness timeout.
+MANAGED_CODEX_HOOKS = [
+    ("UserPromptSubmit", None, "running"),
+    ("PreToolUse", "*", "running"),
+    ("PostToolUse", "*", "running"),
+    ("PermissionRequest", None, "waiting"),
+    ("Stop", None, "done"),
+]
 
-def command_for(status: str) -> str:
+
+def command_for(status: str, source: str = "") -> str:
     # MARKER identifies our hooks; /usr/bin/env avoids depending on the script's
     # +x bit; quotes guard against spaces in the path. Mirrors HookInstaller.swift.
-    return f'{MARKER} /usr/bin/env python3 "{INSTALLED_HOOK}" {status}'
+    suffix = f" {source}" if source else ""
+    return f'{MARKER} /usr/bin/env python3 "{INSTALLED_HOOK}" {status}{suffix}'
 
 
 def is_signal_group(group: dict) -> bool:
@@ -148,6 +163,15 @@ def add_signal_cursor_hooks(settings: dict) -> None:
         hooks.setdefault(event, []).append({"command": command_for(status)})
 
 
+def add_signal_codex_hooks(settings: dict) -> None:
+    hooks = settings.setdefault("hooks", {})
+    for event, matcher, status in MANAGED_CODEX_HOOKS:
+        group = {"hooks": [{"type": "command", "command": command_for(status, "codex")}]}
+        if matcher is not None:
+            group["matcher"] = matcher
+        hooks.setdefault(event, []).append(group)
+
+
 def backup(path: str) -> None:
     if os.path.exists(path):
         dst = f"{path}.signal-bak.{int(time.time())}"
@@ -168,6 +192,10 @@ def write_settings(path: str, settings: dict) -> None:
         f.write("\n")
 
 
+def provider_directory_exists(path: str) -> bool:
+    return os.path.isdir(os.path.dirname(path))
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Install Signal's hooks.")
     parser.add_argument("--uninstall", action="store_true",
@@ -180,11 +208,17 @@ def main() -> int:
         print(f"error: hook script not found at {SOURCE_HOOK}", file=sys.stderr)
         return 1
 
+    install_claude = provider_directory_exists(SETTINGS_PATH)
+    install_cursor = provider_directory_exists(CURSOR_SETTINGS_PATH)
+    install_codex = provider_directory_exists(CODEX_HOOKS_PATH)
+
     # Always clear stale entries first so the operation is idempotent.
-    settings = load_settings(SETTINGS_PATH)
+    settings = load_settings(SETTINGS_PATH) if install_claude else {}
     strip_signal_hooks(settings)
-    cursor = load_settings(CURSOR_SETTINGS_PATH)
+    cursor = load_settings(CURSOR_SETTINGS_PATH) if install_cursor else {}
     strip_signal_cursor_hooks(cursor)
+    codex = load_settings(CODEX_HOOKS_PATH) if install_codex else {}
+    strip_signal_hooks(codex)
 
     if args.uninstall:
         if args.dry_run:
@@ -192,35 +226,66 @@ def main() -> int:
             print(json.dumps(settings, indent=2))
             print(f"# {CURSOR_SETTINGS_PATH}")
             print(json.dumps(cursor, indent=2))
+            print(f"# {CODEX_HOOKS_PATH}")
+            print(json.dumps(codex, indent=2))
         else:
-            write_settings(SETTINGS_PATH, settings)
+            if os.path.exists(SETTINGS_PATH):
+                write_settings(SETTINGS_PATH, settings)
             # Only rewrite Cursor's file if it already exists; never create an
             # empty one for users who never had Cursor hooks.
             if os.path.exists(CURSOR_SETTINGS_PATH):
                 write_settings(CURSOR_SETTINGS_PATH, cursor)
+            # Same for Codex: uninstall should not create a hooks file for users
+            # who never had one.
+            if os.path.exists(CODEX_HOOKS_PATH):
+                write_settings(CODEX_HOOKS_PATH, codex)
             print("Signal hooks removed.")
         return 0
 
-    add_signal_hooks(settings)
-    add_signal_cursor_hooks(cursor)
+    if install_claude:
+        add_signal_hooks(settings)
+    if install_cursor:
+        add_signal_cursor_hooks(cursor)
+    if install_codex:
+        add_signal_codex_hooks(codex)
 
     if args.dry_run:
-        print(f"# {SETTINGS_PATH}")
-        print(json.dumps(settings, indent=2))
-        print(f"# {CURSOR_SETTINGS_PATH}")
-        print(json.dumps(cursor, indent=2))
+        if install_claude:
+            print(f"# {SETTINGS_PATH}")
+            print(json.dumps(settings, indent=2))
+        if install_cursor:
+            print(f"# {CURSOR_SETTINGS_PATH}")
+            print(json.dumps(cursor, indent=2))
+        if install_codex:
+            print(f"# {CODEX_HOOKS_PATH}")
+            print(json.dumps(codex, indent=2))
+        if not (install_claude or install_cursor or install_codex):
+            print("No Claude, Cursor, or Codex config directories found.")
         return 0
+
+    if not (install_claude or install_cursor or install_codex):
+        print("error: no Claude, Cursor, or Codex config directories found.",
+              file=sys.stderr)
+        print("Open at least one supported agent, then run setup again.",
+              file=sys.stderr)
+        return 1
 
     # Copy the hook to its stable home so installed commands survive a moved repo.
     os.makedirs(STATE_DIR, exist_ok=True)
     shutil.copy2(SOURCE_HOOK, INSTALLED_HOOK)
     make_executable(INSTALLED_HOOK)
-    write_settings(SETTINGS_PATH, settings)
-    write_settings(CURSOR_SETTINGS_PATH, cursor)
-    print(f"Signal hooks installed into {SETTINGS_PATH}")
-    print(f"Cursor hooks installed into {CURSOR_SETTINGS_PATH}")
+    if install_claude:
+        write_settings(SETTINGS_PATH, settings)
+        print(f"Signal hooks installed into {SETTINGS_PATH}")
+    if install_cursor:
+        write_settings(CURSOR_SETTINGS_PATH, cursor)
+        print(f"Cursor hooks installed into {CURSOR_SETTINGS_PATH}")
+    if install_codex:
+        write_settings(CODEX_HOOKS_PATH, codex)
+        print(f"Codex hooks installed into {CODEX_HOOKS_PATH}")
     print(f"State directory: {STATE_DIR}")
-    print("Open a new session in Claude Code or Cursor to start tracking.")
+    print("Open a new session in Claude Code, Cursor, or Codex to start tracking.")
+    print("For Codex, run /hooks and trust Signal's hooks if Codex prompts you.")
     return 0
 
 

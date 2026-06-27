@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
 """Signal hook handler for AI coding agents.
 
-Invoked by Claude Code's hook system — fired by the Claude Code CLI, the VS Code
-and Claude Desktop apps, and Cursor's agent. Reads the hook event JSON from
-stdin and records the session's current traffic-light status into a per-session
-state file that the Signal menu bar app watches.
+Invoked by AI coding agent hook systems: Claude Code, Cursor, and Codex. Reads
+the hook event JSON from stdin and records the session's current traffic-light
+status into a per-session state file that the Signal menu bar app watches.
 
 Usage:
-    signal_hook.py <status>
+    signal_hook.py <status> [source]
 
 Where <status> is one of:
     running  - the agent is actively working (UserPromptSubmit / Pre|PostToolUse)
@@ -27,6 +26,7 @@ import tempfile
 import time
 
 VALID_STATUSES = {"running", "waiting", "done", "end"}
+VALID_SOURCES = {"codex", "cursor", "cli", "vscode", "claude_desktop"}
 
 # Cap how much of a transcript we scan for the first user message, so a huge
 # transcript never turns a hook into a slow file read.
@@ -70,12 +70,27 @@ def read_event() -> dict:
 
 def project_name(cwd: str, transcript_path: str = "") -> str:
     if cwd:
-        name = os.path.basename(os.path.normpath(cwd))
+        name = repo_root_name(cwd) or os.path.basename(os.path.normpath(cwd))
         return name or cwd
     # Some clients (notably Cursor's agent) fire hooks without a cwd. Fall back
     # to the project encoded in the transcript path so the session still gets a
     # meaningful label instead of "unknown".
     return project_from_transcript(transcript_path) or "unknown"
+
+
+def repo_root_name(cwd: str) -> str:
+    """Find a nearby git repository root without invoking git from the hook."""
+    if not cwd:
+        return ""
+    path = os.path.abspath(os.path.expanduser(cwd))
+    while True:
+        marker = os.path.join(path, ".git")
+        if os.path.isdir(marker) or os.path.isfile(marker):
+            return os.path.basename(path) or path
+        parent = os.path.dirname(path)
+        if parent == path:
+            return ""
+        path = parent
 
 
 def project_from_transcript(transcript_path: str) -> str:
@@ -102,20 +117,26 @@ def project_from_transcript(transcript_path: str) -> str:
 
 
 def session_source(transcript_path: str, entrypoint: str = "",
-                   is_cursor: bool = False) -> str:
+                   is_cursor: bool = False, forced_source: str = "") -> str:
     """Identify which client produced the session.
 
-    Cursor's own hooks carry a `cursor_version` field, which is the most
+    Signal's installed Codex hooks pass `codex` as an explicit source argument
+    because Codex hook payload details may change independently of Claude and
+    Cursor. Cursor's own hooks carry a `cursor_version` field, which is the most
     reliable signal (it survives even when transcripts are disabled); its
     transcript tree is a secondary heuristic. For Claude Code we prefer the
     transcript's `entrypoint` field (cli / vscode / claude-desktop), falling
-    back to the path. Returns one of "cursor", "vscode", "claude_desktop",
-    "cli", or "" (unknown).
+    back to the path. Returns one of "codex", "cursor", "vscode",
+    "claude_desktop", "cli", or "" (unknown).
     """
+    if forced_source in VALID_SOURCES:
+        return forced_source
     if is_cursor:
         return "cursor"
     if transcript_path and f"{os.sep}.cursor{os.sep}" in transcript_path:
         return "cursor"
+    if transcript_path and f"{os.sep}.codex{os.sep}" in transcript_path:
+        return "codex"
     if entrypoint:
         return ENTRYPOINT_SOURCES.get(entrypoint, "cli")
     if transcript_path and f"{os.sep}.claude{os.sep}" in transcript_path:
@@ -238,12 +259,23 @@ def atomic_write(path: str, payload: dict) -> None:
         raise
 
 
+def read_existing_state(path: str) -> dict:
+    """Best-effort read of the previous state for stable labels."""
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError, TypeError):
+        return {}
+
+
 def main() -> int:
     if len(sys.argv) < 2 or sys.argv[1] not in VALID_STATUSES:
         # Misconfiguration: don't break the session, just no-op.
         return 0
 
     status = sys.argv[1]
+    forced_source = sys.argv[2] if len(sys.argv) > 2 and sys.argv[2] in VALID_SOURCES else ""
     event = read_event()
 
     # Claude Code events carry `session_id`; Cursor events carry
@@ -270,15 +302,21 @@ def main() -> int:
     cwd = event.get("cwd") or first_workspace_root(event)
     transcript_path = event.get("transcript_path") or ""
     meta = read_transcript_meta(transcript_path)
+    previous = read_existing_state(path)
+    previous_project = previous.get("project") if isinstance(previous.get("project"), str) else ""
+    previous_title = previous.get("title") if isinstance(previous.get("title"), str) else ""
+    project = (previous_project if previous_project and previous_project != "unknown"
+               else project_name(cwd, transcript_path))
     payload = {
         "session_id": session_id,
         "status": status,
-        "project": project_name(cwd, transcript_path),
-        "title": meta["title"],
+        "project": project,
+        "title": meta["title"] or previous_title,
         "cwd": cwd,
         "transcript_path": transcript_path,
         "source": session_source(transcript_path, meta["entrypoint"],
-                                 is_cursor=bool(event.get("cursor_version"))),
+                                 is_cursor=bool(event.get("cursor_version")),
+                                 forced_source=forced_source),
         "updated_at": time.time(),
     }
 

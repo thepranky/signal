@@ -9,6 +9,7 @@ Run with:  python3 -m unittest discover -s tests
 
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -23,16 +24,17 @@ class HookTestCase(unittest.TestCase):
         self.state_dir = tempfile.mkdtemp(prefix="signal-test-")
 
     def tearDown(self):
-        for name in os.listdir(self.state_dir):
-            os.unlink(os.path.join(self.state_dir, name))
-        os.rmdir(self.state_dir)
+        shutil.rmtree(self.state_dir)
 
-    def run_hook(self, status, event):
+    def run_hook(self, status, event, source=None):
         """Invoke the hook; return its exit code."""
         env = dict(os.environ, SIGNAL_STATE_DIR=self.state_dir)
         stdin = "" if event is None else json.dumps(event)
+        cmd = [sys.executable, HOOK, status]
+        if source:
+            cmd.append(source)
         proc = subprocess.run(
-            [sys.executable, HOOK, status],
+            cmd,
             input=stdin,
             capture_output=True,
             text=True,
@@ -63,6 +65,27 @@ class HookTestCase(unittest.TestCase):
         self.assertEqual(data["cwd"], "/Users/bob/projects/my-app")
         self.assertEqual(data["session_id"], "sessA")
         self.assertIn("updated_at", data)
+
+    def test_project_uses_git_root_name_for_nested_cwd(self):
+        repo = os.path.join(self.state_dir, "repo")
+        nested = os.path.join(repo, "apps", "api")
+        os.makedirs(nested)
+        os.mkdir(os.path.join(repo, ".git"))
+
+        self.run_hook("running", {"session_id": "sessA", "cwd": nested})
+        self.assertEqual(self.state("sessA")["project"], "repo")
+
+    def test_project_label_stays_stable_across_cwd_changes(self):
+        repo = os.path.join(self.state_dir, "repo")
+        nested = os.path.join(repo, "apps", "api")
+        os.makedirs(nested)
+        os.mkdir(os.path.join(repo, ".git"))
+
+        self.run_hook("running", {"session_id": "sessA", "cwd": repo})
+        self.run_hook("running", {"session_id": "sessA", "cwd": nested})
+        data = self.state("sessA")
+        self.assertEqual(data["project"], "repo")
+        self.assertEqual(data["cwd"], nested)
 
     def test_status_transition_overwrites(self):
         self.run_hook("running", {"session_id": "sessA", "cwd": "/p/app"})
@@ -248,6 +271,40 @@ class HookTestCase(unittest.TestCase):
         self.assertEqual(data["cwd"], "/Users/alice/projects/signal")
         self.assertEqual(data["source"], "cursor")
 
+    def test_representative_codex_payload_uses_explicit_source(self):
+        self.run_hook("running", {
+            "hook_event_name": "UserPromptSubmit",
+            "session_id": "codex-session-1",
+            "cwd": "/Users/alice/projects/signal",
+            "transcript_path": os.path.expanduser(
+                "~/.codex/sessions/2026/06/26/rollout.jsonl"),
+        }, source="codex")
+        data = self.state("codex-session-1")
+        self.assertEqual(data["status"], "running")
+        self.assertEqual(data["project"], "signal")
+        self.assertEqual(data["source"], "codex")
+
+    def test_codex_permission_request_maps_to_waiting(self):
+        self.run_hook("waiting", {
+            "hook_event_name": "PermissionRequest",
+            "session_id": "codex-session-2",
+            "cwd": "/p/app",
+            "tool_name": "Bash",
+        }, source="codex")
+        data = self.state("codex-session-2")
+        self.assertEqual(data["status"], "waiting")
+        self.assertEqual(data["source"], "codex")
+
+    def test_codex_stop_maps_to_done_and_stays_until_stale(self):
+        self.run_hook("done", {
+            "hook_event_name": "Stop",
+            "session_id": "codex-session-3",
+            "cwd": "/p/app",
+        }, source="codex")
+        data = self.state("codex-session-3")
+        self.assertEqual(data["status"], "done")
+        self.assertEqual(data["source"], "codex")
+
     def test_title_unwraps_cursor_user_query(self):
         wrapped = ("<timestamp>Fri</timestamp>\n<user_query>\n"
                    "Make the button blue\n</user_query>")
@@ -274,6 +331,27 @@ class HookTestCase(unittest.TestCase):
         title = self.state("t3")["title"]
         self.assertLessEqual(len(title), 60)
         self.assertTrue(title.endswith("\u2026"))
+
+    def test_title_refreshes_when_current_transcript_has_title(self):
+        first = self.write_transcript("first.jsonl", [
+            {"type": "user", "message": {"role": "user", "content": "Old title"}},
+        ])
+        second = self.write_transcript("second.jsonl", [
+            {"type": "user", "message": {"role": "user", "content": "New title"}},
+        ])
+
+        self.run_hook("running", {
+            "session_id": "t4",
+            "cwd": "/p/app",
+            "transcript_path": first,
+        })
+        self.run_hook("running", {
+            "session_id": "t4",
+            "cwd": "/p/app",
+            "transcript_path": second,
+        })
+
+        self.assertEqual(self.state("t4")["title"], "New title")
 
     def test_invalid_status_is_noop(self):
         code = self.run_hook("bogus", {"session_id": "sessA", "cwd": "/p/app"})
