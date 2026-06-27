@@ -49,10 +49,11 @@ To update, run the same command again.
 
 ## Install (Option 2: Homebrew)
 
-The cask is `signal-agent` (avoids colliding with Signal Messenger):
+The cask is `signal-agent` (avoids colliding with Signal Messenger). Tap this
+repo by URL (Homebrew otherwise looks for a separate `homebrew-signal` mirror):
 
 ```bash
-brew install --cask thepranky/signal/signal-agent
+brew tap thepranky/signal https://github.com/thepranky/signal.git && brew install --cask thepranky/signal/signal-agent
 ```
 
 Same setup step in the menu. To update: `brew upgrade --cask signal-agent`.
@@ -62,7 +63,7 @@ If you previously installed the old `signal` cask, switch over:
 ```bash
 brew uninstall --cask signal 2>/dev/null
 brew untap thepranky/signal 2>/dev/null
-brew install --cask thepranky/signal/signal-agent
+brew tap thepranky/signal https://github.com/thepranky/signal.git && brew install --cask thepranky/signal/signal-agent
 ```
 
 ## Install (Option 3: download)
