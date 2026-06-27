@@ -311,7 +311,7 @@ def main() -> int:
         "session_id": session_id,
         "status": status,
         "project": project,
-        "title": previous_title or meta["title"],
+        "title": meta["title"] or previous_title,
         "cwd": cwd,
         "transcript_path": transcript_path,
         "source": session_source(transcript_path, meta["entrypoint"],

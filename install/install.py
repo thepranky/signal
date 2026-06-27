@@ -73,7 +73,7 @@ MANAGED_CODEX_HOOKS = [
     ("UserPromptSubmit", None, "running"),
     ("PreToolUse", "*", "running"),
     ("PostToolUse", "*", "running"),
-    ("PermissionRequest", "*", "waiting"),
+    ("PermissionRequest", None, "waiting"),
     ("Stop", None, "done"),
 ]
 
@@ -192,6 +192,10 @@ def write_settings(path: str, settings: dict) -> None:
         f.write("\n")
 
 
+def provider_directory_exists(path: str) -> bool:
+    return os.path.isdir(os.path.dirname(path))
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description="Install Signal's hooks.")
     parser.add_argument("--uninstall", action="store_true",
@@ -204,12 +208,16 @@ def main() -> int:
         print(f"error: hook script not found at {SOURCE_HOOK}", file=sys.stderr)
         return 1
 
+    install_claude = provider_directory_exists(SETTINGS_PATH)
+    install_cursor = provider_directory_exists(CURSOR_SETTINGS_PATH)
+    install_codex = provider_directory_exists(CODEX_HOOKS_PATH)
+
     # Always clear stale entries first so the operation is idempotent.
-    settings = load_settings(SETTINGS_PATH)
+    settings = load_settings(SETTINGS_PATH) if install_claude else {}
     strip_signal_hooks(settings)
-    cursor = load_settings(CURSOR_SETTINGS_PATH)
+    cursor = load_settings(CURSOR_SETTINGS_PATH) if install_cursor else {}
     strip_signal_cursor_hooks(cursor)
-    codex = load_settings(CODEX_HOOKS_PATH)
+    codex = load_settings(CODEX_HOOKS_PATH) if install_codex else {}
     strip_signal_hooks(codex)
 
     if args.uninstall:
@@ -221,7 +229,8 @@ def main() -> int:
             print(f"# {CODEX_HOOKS_PATH}")
             print(json.dumps(codex, indent=2))
         else:
-            write_settings(SETTINGS_PATH, settings)
+            if os.path.exists(SETTINGS_PATH):
+                write_settings(SETTINGS_PATH, settings)
             # Only rewrite Cursor's file if it already exists; never create an
             # empty one for users who never had Cursor hooks.
             if os.path.exists(CURSOR_SETTINGS_PATH):
@@ -233,29 +242,47 @@ def main() -> int:
             print("Signal hooks removed.")
         return 0
 
-    add_signal_hooks(settings)
-    add_signal_cursor_hooks(cursor)
-    add_signal_codex_hooks(codex)
+    if install_claude:
+        add_signal_hooks(settings)
+    if install_cursor:
+        add_signal_cursor_hooks(cursor)
+    if install_codex:
+        add_signal_codex_hooks(codex)
 
     if args.dry_run:
-        print(f"# {SETTINGS_PATH}")
-        print(json.dumps(settings, indent=2))
-        print(f"# {CURSOR_SETTINGS_PATH}")
-        print(json.dumps(cursor, indent=2))
-        print(f"# {CODEX_HOOKS_PATH}")
-        print(json.dumps(codex, indent=2))
+        if install_claude:
+            print(f"# {SETTINGS_PATH}")
+            print(json.dumps(settings, indent=2))
+        if install_cursor:
+            print(f"# {CURSOR_SETTINGS_PATH}")
+            print(json.dumps(cursor, indent=2))
+        if install_codex:
+            print(f"# {CODEX_HOOKS_PATH}")
+            print(json.dumps(codex, indent=2))
+        if not (install_claude or install_cursor or install_codex):
+            print("No Claude, Cursor, or Codex config directories found.")
         return 0
+
+    if not (install_claude or install_cursor or install_codex):
+        print("error: no Claude, Cursor, or Codex config directories found.",
+              file=sys.stderr)
+        print("Open at least one supported agent, then run setup again.",
+              file=sys.stderr)
+        return 1
 
     # Copy the hook to its stable home so installed commands survive a moved repo.
     os.makedirs(STATE_DIR, exist_ok=True)
     shutil.copy2(SOURCE_HOOK, INSTALLED_HOOK)
     make_executable(INSTALLED_HOOK)
-    write_settings(SETTINGS_PATH, settings)
-    write_settings(CURSOR_SETTINGS_PATH, cursor)
-    write_settings(CODEX_HOOKS_PATH, codex)
-    print(f"Signal hooks installed into {SETTINGS_PATH}")
-    print(f"Cursor hooks installed into {CURSOR_SETTINGS_PATH}")
-    print(f"Codex hooks installed into {CODEX_HOOKS_PATH}")
+    if install_claude:
+        write_settings(SETTINGS_PATH, settings)
+        print(f"Signal hooks installed into {SETTINGS_PATH}")
+    if install_cursor:
+        write_settings(CURSOR_SETTINGS_PATH, cursor)
+        print(f"Cursor hooks installed into {CURSOR_SETTINGS_PATH}")
+    if install_codex:
+        write_settings(CODEX_HOOKS_PATH, codex)
+        print(f"Codex hooks installed into {CODEX_HOOKS_PATH}")
     print(f"State directory: {STATE_DIR}")
     print("Open a new session in Claude Code, Cursor, or Codex to start tracking.")
     print("For Codex, run /hooks and trust Signal's hooks if Codex prompts you.")

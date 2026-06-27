@@ -44,6 +44,11 @@ class InstallerTestCase(unittest.TestCase):
         with open(path, "w", encoding="utf-8") as f:
             json.dump(data, f)
 
+    def make_provider_dirs(self):
+        os.makedirs(os.path.dirname(self.claude), exist_ok=True)
+        os.makedirs(os.path.dirname(self.cursor), exist_ok=True)
+        os.makedirs(os.path.dirname(self.codex), exist_ok=True)
+
     def read_json(self, path):
         with open(path, encoding="utf-8") as f:
             return json.load(f)
@@ -52,6 +57,8 @@ class InstallerTestCase(unittest.TestCase):
         return str(obj).count(MARKER)
 
     def test_install_creates_full_claude_cursor_and_codex_hook_sets(self):
+        self.make_provider_dirs()
+
         proc = self.run_installer()
         self.assertEqual(proc.returncode, 0, proc.stderr)
 
@@ -62,8 +69,32 @@ class InstallerTestCase(unittest.TestCase):
         self.assertEqual(self.count_marker(cursor), 6)
         self.assertEqual(self.count_marker(codex), 5)
         self.assertIn(" codex", str(codex))
+        permission_groups = codex["hooks"]["PermissionRequest"]
+        self.assertTrue(any("matcher" not in group for group in permission_groups))
         self.assertTrue(os.path.exists(os.path.join(self.home, ".signal", "signal_hook.py")))
         self.assertTrue(os.path.isdir(os.path.join(self.home, ".signal", "sessions")))
+
+    def test_install_skips_missing_provider_directories(self):
+        os.makedirs(os.path.dirname(self.codex), exist_ok=True)
+
+        proc = self.run_installer()
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+
+        self.assertFalse(os.path.exists(self.claude))
+        self.assertFalse(os.path.exists(self.cursor))
+        codex = self.read_json(self.codex)
+        self.assertEqual(self.count_marker(codex), 5)
+        self.assertIn(" codex", str(codex))
+        self.assertTrue(os.path.exists(os.path.join(self.home, ".signal", "signal_hook.py")))
+
+    def test_install_fails_when_no_provider_directories_exist(self):
+        proc = self.run_installer()
+        self.assertEqual(proc.returncode, 1)
+        self.assertIn("no Claude, Cursor, or Codex config directories found", proc.stderr)
+        self.assertFalse(os.path.exists(self.claude))
+        self.assertFalse(os.path.exists(self.cursor))
+        self.assertFalse(os.path.exists(self.codex))
+        self.assertFalse(os.path.exists(os.path.join(self.home, ".signal", "signal_hook.py")))
 
     def test_reinstall_repairs_partial_signal_hooks_without_duplicates(self):
         signal_command = (
@@ -112,6 +143,8 @@ class InstallerTestCase(unittest.TestCase):
         self.assertIn("echo keep-codex", str(codex))
 
     def test_uninstall_removes_only_signal_hooks_and_preserves_unrelated_hooks(self):
+        self.make_provider_dirs()
+
         proc = self.run_installer()
         self.assertEqual(proc.returncode, 0, proc.stderr)
 
@@ -178,9 +211,7 @@ class InstallerTestCase(unittest.TestCase):
     def test_dry_run_does_not_write_files(self):
         proc = self.run_installer("--dry-run")
         self.assertEqual(proc.returncode, 0, proc.stderr)
-        self.assertIn(".claude/settings.json", proc.stdout)
-        self.assertIn(".cursor/hooks.json", proc.stdout)
-        self.assertIn(".codex/hooks.json", proc.stdout)
+        self.assertIn("No Claude, Cursor, or Codex config directories found.", proc.stdout)
         self.assertFalse(os.path.exists(self.claude))
         self.assertFalse(os.path.exists(self.cursor))
         self.assertFalse(os.path.exists(self.codex))

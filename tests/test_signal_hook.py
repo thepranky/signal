@@ -332,6 +332,27 @@ class HookTestCase(unittest.TestCase):
         self.assertLessEqual(len(title), 60)
         self.assertTrue(title.endswith("\u2026"))
 
+    def test_title_refreshes_when_current_transcript_has_title(self):
+        first = self.write_transcript("first.jsonl", [
+            {"type": "user", "message": {"role": "user", "content": "Old title"}},
+        ])
+        second = self.write_transcript("second.jsonl", [
+            {"type": "user", "message": {"role": "user", "content": "New title"}},
+        ])
+
+        self.run_hook("running", {
+            "session_id": "t4",
+            "cwd": "/p/app",
+            "transcript_path": first,
+        })
+        self.run_hook("running", {
+            "session_id": "t4",
+            "cwd": "/p/app",
+            "transcript_path": second,
+        })
+
+        self.assertEqual(self.state("t4")["title"], "New title")
+
     def test_invalid_status_is_noop(self):
         code = self.run_hook("bogus", {"session_id": "sessA", "cwd": "/p/app"})
         self.assertEqual(code, 0)

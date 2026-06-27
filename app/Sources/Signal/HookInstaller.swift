@@ -7,6 +7,7 @@ enum HookInstaller {
 
     enum InstallError: LocalizedError {
         case hookScriptMissing
+        case noSupportedProviders
         case settingsUnreadable
         case writeFailed(String)
 
@@ -14,6 +15,8 @@ enum HookInstaller {
             switch self {
             case .hookScriptMissing:
                 return "The bundled hook script is missing from Signal.app."
+            case .noSupportedProviders:
+                return "No Claude, Cursor, or Codex config directories were found. Open at least one supported agent, then try again."
             case .settingsUnreadable:
                 return "A hooks settings file (~/.claude/settings.json or "
                      + "~/.cursor/hooks.json or ~/.codex/hooks.json) exists but "
@@ -58,7 +61,7 @@ enum HookInstaller {
         ("UserPromptSubmit", nil, "running"),
         ("PreToolUse", "*", "running"),
         ("PostToolUse", "*", "running"),
-        ("PermissionRequest", "*", "waiting"),
+        ("PermissionRequest", nil, "waiting"),
         ("Stop", nil, "done"),
     ]
 
@@ -86,6 +89,10 @@ enum HookInstaller {
             .appendingPathComponent(".codex/hooks.json")
     }
 
+    private static var claudeDirectoryURL: URL { settingsURL.deletingLastPathComponent() }
+    private static var cursorDirectoryURL: URL { cursorSettingsURL.deletingLastPathComponent() }
+    private static var codexDirectoryURL: URL { codexHooksURL.deletingLastPathComponent() }
+
     private static var signalHome: URL {
         FileManager.default.homeDirectoryForCurrentUser.appendingPathComponent(".signal")
     }
@@ -108,10 +115,15 @@ enum HookInstaller {
 
     // MARK: - Detection / repair
 
-    /// True only when Signal is wired into every supported provider, so older
-    /// partial installs are re-offered the one-click setup to add missing hooks.
+    /// True when Signal is wired into every provider that appears to be present
+    /// on this machine. Users may have any subset of Claude, Cursor, and Codex.
     static func isInstalled() -> Bool {
-        isClaudeInstalled() && isCursorInstalled() && isCodexInstalled()
+        let checks: [() -> Bool] = [
+            isProviderDirectoryPresent(claudeDirectoryURL) ? isClaudeInstalled : nil,
+            isProviderDirectoryPresent(cursorDirectoryURL) ? isCursorInstalled : nil,
+            isProviderDirectoryPresent(codexDirectoryURL) ? isCodexInstalled : nil,
+        ].compactMap { $0 }
+        return !checks.isEmpty && checks.allSatisfy { $0() }
     }
 
     private static func isClaudeInstalled() -> Bool {
@@ -161,60 +173,76 @@ enum HookInstaller {
     static func install() throws {
         guard bundledHookScript != nil else { throw InstallError.hookScriptMissing }
 
-        var settings = try loadSettings(at: settingsURL)
-        var cursorSettings = try loadSettings(at: cursorSettingsURL)
-        var codexHooksSettings = try loadSettings(at: codexHooksURL)
+        let installClaude = isProviderDirectoryPresent(claudeDirectoryURL)
+        let installCursor = isProviderDirectoryPresent(cursorDirectoryURL)
+        let installCodex = isProviderDirectoryPresent(codexDirectoryURL)
+
+        guard installClaude || installCursor || installCodex else {
+            throw InstallError.noSupportedProviders
+        }
+
+        var settings = installClaude ? try loadSettings(at: settingsURL) : [:]
+        var cursorSettings = installCursor ? try loadSettings(at: cursorSettingsURL) : [:]
+        var codexHooksSettings = installCodex ? try loadSettings(at: codexHooksURL) : [:]
 
         stripSignalHooks(&settings)
         stripCursorSignalHooks(&cursorSettings)
         stripSignalHooks(&codexHooksSettings)
 
-        var hooks = (settings["hooks"] as? [String: Any]) ?? [:]
-        for entry in managed {
-            var group: [String: Any] = [
-                "hooks": [["type": "command", "command": command(for: entry.status)]]
-            ]
-            if let matcher = entry.matcher { group["matcher"] = matcher }
-            var groups = (hooks[entry.event] as? [[String: Any]]) ?? []
-            groups.append(group)
-            hooks[entry.event] = groups
+        if installClaude {
+            var hooks = (settings["hooks"] as? [String: Any]) ?? [:]
+            for entry in managed {
+                var group: [String: Any] = [
+                    "hooks": [["type": "command", "command": command(for: entry.status)]]
+                ]
+                if let matcher = entry.matcher { group["matcher"] = matcher }
+                var groups = (hooks[entry.event] as? [[String: Any]]) ?? []
+                groups.append(group)
+                hooks[entry.event] = groups
+            }
+            settings["hooks"] = hooks
         }
-        settings["hooks"] = hooks
 
-        if cursorSettings["version"] == nil { cursorSettings["version"] = 1 }
-        var cursorHooks = (cursorSettings["hooks"] as? [String: Any]) ?? [:]
-        for entry in managedCursor {
-            var entries = (cursorHooks[entry.event] as? [[String: Any]]) ?? []
-            entries.append(["command": command(for: entry.status)])
-            cursorHooks[entry.event] = entries
+        if installCursor {
+            if cursorSettings["version"] == nil { cursorSettings["version"] = 1 }
+            var cursorHooks = (cursorSettings["hooks"] as? [String: Any]) ?? [:]
+            for entry in managedCursor {
+                var entries = (cursorHooks[entry.event] as? [[String: Any]]) ?? []
+                entries.append(["command": command(for: entry.status)])
+                cursorHooks[entry.event] = entries
+            }
+            cursorSettings["hooks"] = cursorHooks
         }
-        cursorSettings["hooks"] = cursorHooks
 
-        var codexHooks = (codexHooksSettings["hooks"] as? [String: Any]) ?? [:]
-        for entry in managedCodex {
-            var group: [String: Any] = [
-                "hooks": [[
-                    "type": "command",
-                    "command": command(for: entry.status, source: "codex"),
-                ]]
-            ]
-            if let matcher = entry.matcher { group["matcher"] = matcher }
-            var groups = (codexHooks[entry.event] as? [[String: Any]]) ?? []
-            groups.append(group)
-            codexHooks[entry.event] = groups
+        if installCodex {
+            var codexHooks = (codexHooksSettings["hooks"] as? [String: Any]) ?? [:]
+            for entry in managedCodex {
+                var group: [String: Any] = [
+                    "hooks": [[
+                        "type": "command",
+                        "command": command(for: entry.status, source: "codex"),
+                    ]]
+                ]
+                if let matcher = entry.matcher { group["matcher"] = matcher }
+                var groups = (codexHooks[entry.event] as? [[String: Any]]) ?? []
+                groups.append(group)
+                codexHooks[entry.event] = groups
+            }
+            codexHooksSettings["hooks"] = codexHooks
         }
-        codexHooksSettings["hooks"] = codexHooks
 
         try copyHookToStableLocation()
-        try writeSettings(settings, to: settingsURL)
-        try writeSettings(cursorSettings, to: cursorSettingsURL)
-        try writeSettings(codexHooksSettings, to: codexHooksURL)
+        if installClaude { try writeSettings(settings, to: settingsURL) }
+        if installCursor { try writeSettings(cursorSettings, to: cursorSettingsURL) }
+        if installCodex { try writeSettings(codexHooksSettings, to: codexHooksURL) }
     }
 
     static func uninstall() throws {
-        var settings = try loadSettings(at: settingsURL)
-        stripSignalHooks(&settings)
-        try writeSettings(settings, to: settingsURL)
+        if FileManager.default.fileExists(atPath: settingsURL.path) {
+            var settings = try loadSettings(at: settingsURL)
+            stripSignalHooks(&settings)
+            try writeSettings(settings, to: settingsURL)
+        }
 
         // Only rewrite Cursor's file if it already exists, so uninstalling
         // never creates an empty hooks.json for users who never had Cursor.
@@ -254,6 +282,12 @@ enum HookInstaller {
 
     private static func isSignalCursorEntry(_ entry: [String: Any], status: String) -> Bool {
         (entry["command"] as? String) == command(for: status)
+    }
+
+    private static func isProviderDirectoryPresent(_ url: URL) -> Bool {
+        var isDirectory: ObjCBool = false
+        return FileManager.default.fileExists(atPath: url.path, isDirectory: &isDirectory)
+            && isDirectory.boolValue
     }
 
     private static func stripSignalHooks(_ settings: inout [String: Any]) {
