@@ -1,6 +1,6 @@
 cask "signal-agent" do
-  version "0.1.9"
-  sha256 "60e185c73e27925f233679c30d792af2b1d3382e92d56d69b5fed93bb9a46aad"
+  version "0.1.10"
+  sha256 "fd5dbc594c2c21d4fc8d64ef26040605a5b810d57061dbb55dac83b9f34224bc"
 
   url "https://github.com/thepranky/signal/releases/download/v#{version}/Signal-v#{version}.dmg"
   name "Signal"
