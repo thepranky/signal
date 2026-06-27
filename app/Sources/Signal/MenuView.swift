@@ -71,14 +71,16 @@ struct MenuView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .bottom) {
-                VStack(alignment: .leading, spacing: 1) {
+                VStack(alignment: .leading, spacing: 4) {
                     Text("Signal").font(.headline)
                     Text("Agent Sessions")
-                        .font(.caption)
+                        .font(.body)
                         .foregroundStyle(.secondary)
                 }
                 Spacer()
-                Text("\(store.sessions.count)").foregroundStyle(.secondary)
+                Text("\(store.sessions.count)")
+                    .font(.body)
+                    .foregroundStyle(.secondary)
             }
             .padding(.horizontal, 12)
             .padding(.top, 10)
@@ -116,8 +118,7 @@ struct MenuView: View {
                 LegendDot(color: .yellow, text: "Waiting")
                 LegendDot(color: .green, text: "Done")
                 Spacer()
-                Button("Quit") { NSApplication.shared.terminate(nil) }
-                    .buttonStyle(.borderless)
+                QuitButton()
             }
             .font(.caption)
             .padding(.horizontal, 12)
@@ -165,9 +166,32 @@ struct HookSuccessRow: View {
     }
 }
 
+struct QuitButton: View {
+    @State private var isHovered = false
+
+    var body: some View {
+        Button {
+            NSApplication.shared.terminate(nil)
+        } label: {
+            Text("Quit")
+                .foregroundStyle(isHovered ? .primary : .secondary)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
+                .background(
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(Color.secondary.opacity(isHovered ? 0.16 : 0))
+                )
+        }
+        .buttonStyle(.plain)
+        .focusable(false)
+        .onHover { isHovered = $0 }
+    }
+}
+
 struct SessionRow: View {
     let session: Session
     let onClear: () -> Void
+    @State private var isClearHovered = false
 
     var body: some View {
         HStack(spacing: 10) {
@@ -196,11 +220,19 @@ struct SessionRow: View {
             }
             Spacer()
             Button(action: onClear) {
-                Image(systemName: "xmark.circle")
-                    .imageScale(.small)
+                ZStack {
+                    Circle()
+                        .fill(Color.secondary.opacity(isClearHovered ? 0.30 : 0.18))
+                    Image(systemName: "xmark")
+                        .font(.system(size: 9, weight: .semibold))
+                        .foregroundStyle(isClearHovered ? .primary : .secondary)
+                }
+                .frame(width: 16, height: 16)
+                .contentShape(Circle())
             }
-            .buttonStyle(.borderless)
-            .foregroundStyle(.secondary)
+            .buttonStyle(.plain)
+            .focusable(false)
+            .onHover { isClearHovered = $0 }
             .help("Clear this session")
         }
         .padding(.horizontal, 12)
