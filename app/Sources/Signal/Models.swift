@@ -44,7 +44,7 @@ struct Session: Identifiable, Codable {
     let cwd: String
     let transcriptPath: String
     /// Which client produced the session ("cli", "vscode", "claude_desktop",
-    /// "cursor"). Optional so older state files still decode.
+    /// "cursor", "codex"). Optional so older state files still decode.
     let source: String?
     let updatedAt: Double
 
@@ -57,6 +57,7 @@ struct Session: Identifiable, Codable {
     var sourceLabel: String? {
         switch source {
         case "cursor": return "Cursor"
+        case "codex": return "Codex"
         case "vscode": return "VS Code"
         case "claude_desktop": return "Claude Desktop"
         case "cli": return "Claude"

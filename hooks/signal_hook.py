@@ -1,13 +1,12 @@
 #!/usr/bin/env python3
 """Signal hook handler for AI coding agents.
 
-Invoked by Claude Code's hook system — fired by the Claude Code CLI, the VS Code
-and Claude Desktop apps, and Cursor's agent. Reads the hook event JSON from
-stdin and records the session's current traffic-light status into a per-session
-state file that the Signal menu bar app watches.
+Invoked by AI coding agent hook systems: Claude Code, Cursor, and Codex. Reads
+the hook event JSON from stdin and records the session's current traffic-light
+status into a per-session state file that the Signal menu bar app watches.
 
 Usage:
-    signal_hook.py <status>
+    signal_hook.py <status> [source]
 
 Where <status> is one of:
     running  - the agent is actively working (UserPromptSubmit / Pre|PostToolUse)
@@ -27,6 +26,7 @@ import tempfile
 import time
 
 VALID_STATUSES = {"running", "waiting", "done", "end"}
+VALID_SOURCES = {"codex", "cursor", "cli", "vscode", "claude_desktop"}
 
 # Cap how much of a transcript we scan for the first user message, so a huge
 # transcript never turns a hook into a slow file read.
@@ -102,20 +102,26 @@ def project_from_transcript(transcript_path: str) -> str:
 
 
 def session_source(transcript_path: str, entrypoint: str = "",
-                   is_cursor: bool = False) -> str:
+                   is_cursor: bool = False, forced_source: str = "") -> str:
     """Identify which client produced the session.
 
-    Cursor's own hooks carry a `cursor_version` field, which is the most
+    Signal's installed Codex hooks pass `codex` as an explicit source argument
+    because Codex hook payload details may change independently of Claude and
+    Cursor. Cursor's own hooks carry a `cursor_version` field, which is the most
     reliable signal (it survives even when transcripts are disabled); its
     transcript tree is a secondary heuristic. For Claude Code we prefer the
     transcript's `entrypoint` field (cli / vscode / claude-desktop), falling
-    back to the path. Returns one of "cursor", "vscode", "claude_desktop",
-    "cli", or "" (unknown).
+    back to the path. Returns one of "codex", "cursor", "vscode",
+    "claude_desktop", "cli", or "" (unknown).
     """
+    if forced_source in VALID_SOURCES:
+        return forced_source
     if is_cursor:
         return "cursor"
     if transcript_path and f"{os.sep}.cursor{os.sep}" in transcript_path:
         return "cursor"
+    if transcript_path and f"{os.sep}.codex{os.sep}" in transcript_path:
+        return "codex"
     if entrypoint:
         return ENTRYPOINT_SOURCES.get(entrypoint, "cli")
     if transcript_path and f"{os.sep}.claude{os.sep}" in transcript_path:
@@ -244,6 +250,7 @@ def main() -> int:
         return 0
 
     status = sys.argv[1]
+    forced_source = sys.argv[2] if len(sys.argv) > 2 and sys.argv[2] in VALID_SOURCES else ""
     event = read_event()
 
     # Claude Code events carry `session_id`; Cursor events carry
@@ -278,7 +285,8 @@ def main() -> int:
         "cwd": cwd,
         "transcript_path": transcript_path,
         "source": session_source(transcript_path, meta["entrypoint"],
-                                 is_cursor=bool(event.get("cursor_version"))),
+                                 is_cursor=bool(event.get("cursor_version")),
+                                 forced_source=forced_source),
         "updated_at": time.time(),
     }
 

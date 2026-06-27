@@ -1,7 +1,8 @@
 """Tests for Signal's Python hook installer.
 
 These run the installer as a subprocess with a temporary HOME, matching the
-real CLI contract without touching the user's actual Claude or Cursor settings.
+real CLI contract without touching the user's actual Claude, Cursor, or Codex
+settings.
 
 Run with:  python3 -m unittest discover -s tests
 """
@@ -24,6 +25,7 @@ class InstallerTestCase(unittest.TestCase):
         self.home = tempfile.mkdtemp(prefix="signal-install-test-")
         self.claude = os.path.join(self.home, ".claude", "settings.json")
         self.cursor = os.path.join(self.home, ".cursor", "hooks.json")
+        self.codex = os.path.join(self.home, ".codex", "hooks.json")
 
     def tearDown(self):
         shutil.rmtree(self.home)
@@ -49,14 +51,17 @@ class InstallerTestCase(unittest.TestCase):
     def count_marker(self, obj):
         return str(obj).count(MARKER)
 
-    def test_install_creates_full_claude_and_cursor_hook_sets(self):
+    def test_install_creates_full_claude_cursor_and_codex_hook_sets(self):
         proc = self.run_installer()
         self.assertEqual(proc.returncode, 0, proc.stderr)
 
         claude = self.read_json(self.claude)
         cursor = self.read_json(self.cursor)
+        codex = self.read_json(self.codex)
         self.assertEqual(self.count_marker(claude), 9)
         self.assertEqual(self.count_marker(cursor), 6)
+        self.assertEqual(self.count_marker(codex), 5)
+        self.assertIn(" codex", str(codex))
         self.assertTrue(os.path.exists(os.path.join(self.home, ".signal", "signal_hook.py")))
         self.assertTrue(os.path.isdir(os.path.join(self.home, ".signal", "sessions")))
 
@@ -82,16 +87,29 @@ class InstallerTestCase(unittest.TestCase):
                 ]
             }
         })
+        self.write_json(self.codex, {
+            "hooks": {
+                "PreToolUse": [
+                    {"matcher": "*", "hooks": [
+                        {"type": "command", "command": f"{signal_command} codex"}
+                    ]},
+                    {"hooks": [{"type": "command", "command": "echo keep-codex"}]},
+                ]
+            }
+        })
 
         proc = self.run_installer()
         self.assertEqual(proc.returncode, 0, proc.stderr)
 
         claude = self.read_json(self.claude)
         cursor = self.read_json(self.cursor)
+        codex = self.read_json(self.codex)
         self.assertEqual(self.count_marker(claude), 9)
         self.assertEqual(self.count_marker(cursor), 6)
+        self.assertEqual(self.count_marker(codex), 5)
         self.assertIn("echo keep-claude", str(claude))
         self.assertIn("echo keep-cursor", str(cursor))
+        self.assertIn("echo keep-codex", str(codex))
 
     def test_uninstall_removes_only_signal_hooks_and_preserves_unrelated_hooks(self):
         proc = self.run_installer()
@@ -107,15 +125,24 @@ class InstallerTestCase(unittest.TestCase):
         cursor["hooks"].setdefault("preToolUse", []).append({"command": "echo keep-cursor"})
         self.write_json(self.cursor, cursor)
 
+        codex = self.read_json(self.codex)
+        codex["hooks"].setdefault("PreToolUse", []).append({
+            "hooks": [{"type": "command", "command": "echo keep-codex"}]
+        })
+        self.write_json(self.codex, codex)
+
         proc = self.run_installer("--uninstall")
         self.assertEqual(proc.returncode, 0, proc.stderr)
 
         claude = self.read_json(self.claude)
         cursor = self.read_json(self.cursor)
+        codex = self.read_json(self.codex)
         self.assertEqual(self.count_marker(claude), 0)
         self.assertEqual(self.count_marker(cursor), 0)
+        self.assertEqual(self.count_marker(codex), 0)
         self.assertIn("echo keep-claude", str(claude))
         self.assertIn("echo keep-cursor", str(cursor))
+        self.assertIn("echo keep-codex", str(codex))
 
     def test_invalid_json_refuses_to_overwrite_any_settings(self):
         os.makedirs(os.path.dirname(self.claude), exist_ok=True)
@@ -123,6 +150,7 @@ class InstallerTestCase(unittest.TestCase):
         with open(self.claude, "w", encoding="utf-8") as f:
             f.write("{not json")
         self.write_json(self.cursor, {"version": 1, "hooks": {}})
+        self.write_json(self.codex, {"hooks": {}})
 
         proc = self.run_installer()
         self.assertNotEqual(proc.returncode, 0)
@@ -130,14 +158,32 @@ class InstallerTestCase(unittest.TestCase):
         with open(self.claude, encoding="utf-8") as f:
             self.assertEqual(f.read(), "{not json")
         self.assertEqual(self.read_json(self.cursor), {"version": 1, "hooks": {}})
+        self.assertEqual(self.read_json(self.codex), {"hooks": {}})
+
+    def test_invalid_codex_json_refuses_to_overwrite_any_settings(self):
+        self.write_json(self.claude, {"hooks": {}})
+        self.write_json(self.cursor, {"version": 1, "hooks": {}})
+        os.makedirs(os.path.dirname(self.codex), exist_ok=True)
+        with open(self.codex, "w", encoding="utf-8") as f:
+            f.write("{not json")
+
+        proc = self.run_installer()
+        self.assertNotEqual(proc.returncode, 0)
+        self.assertIn("refusing to overwrite", proc.stderr)
+        self.assertEqual(self.read_json(self.claude), {"hooks": {}})
+        self.assertEqual(self.read_json(self.cursor), {"version": 1, "hooks": {}})
+        with open(self.codex, encoding="utf-8") as f:
+            self.assertEqual(f.read(), "{not json")
 
     def test_dry_run_does_not_write_files(self):
         proc = self.run_installer("--dry-run")
         self.assertEqual(proc.returncode, 0, proc.stderr)
         self.assertIn(".claude/settings.json", proc.stdout)
         self.assertIn(".cursor/hooks.json", proc.stdout)
+        self.assertIn(".codex/hooks.json", proc.stdout)
         self.assertFalse(os.path.exists(self.claude))
         self.assertFalse(os.path.exists(self.cursor))
+        self.assertFalse(os.path.exists(self.codex))
         self.assertFalse(os.path.exists(os.path.join(self.home, ".signal", "signal_hook.py")))
 
 
