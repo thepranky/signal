@@ -52,12 +52,21 @@ final class HookState: ObservableObject {
             errorMessage = error.localizedDescription
         }
     }
+
+    func dismissSuccess() {
+        showSuccess = false
+    }
 }
 
 /// The panel shown when the menu bar item is clicked.
 struct MenuView: View {
     @ObservedObject var store: SessionStore
     @StateObject private var hooks = HookState()
+
+    private enum Layout {
+        static let width: CGFloat = 300
+        static let minHeight: CGFloat = 192
+    }
 
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
@@ -96,6 +105,8 @@ struct MenuView: View {
                 }
             }
 
+            Spacer(minLength: 0)
+
             Divider()
 
             HStack(spacing: 12) {
@@ -110,9 +121,10 @@ struct MenuView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
         }
-        .frame(width: 300)
+        .frame(width: Layout.width, minHeight: Layout.minHeight, alignment: .topLeading)
         .frame(maxHeight: .infinity, alignment: .topLeading)
         .onAppear { hooks.refresh() }
+        .onDisappear { hooks.dismissSuccess() }
     }
 }
 
