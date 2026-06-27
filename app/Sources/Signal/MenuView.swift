@@ -121,7 +121,8 @@ struct MenuView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
         }
-        .frame(width: Layout.width, minHeight: Layout.minHeight, alignment: .topLeading)
+        .frame(width: Layout.width)
+        .frame(minHeight: Layout.minHeight, alignment: .topLeading)
         .frame(maxHeight: .infinity, alignment: .topLeading)
         .onAppear { hooks.refresh() }
         .onDisappear { hooks.dismissSuccess() }
