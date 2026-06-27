@@ -66,6 +66,7 @@ struct MenuView: View {
     private enum Layout {
         static let width: CGFloat = 300
         static let minHeight: CGFloat = 192
+        static let maxHeight: CGFloat = 480
     }
 
     var body: some View {
@@ -102,11 +103,16 @@ struct MenuView: View {
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.vertical, 20)
             } else {
-                ForEach(store.sessions) { session in
-                    SessionRow(session: session) {
-                        store.clear(session)
+                ScrollView {
+                    LazyVStack(spacing: 0) {
+                        ForEach(store.sessions) { session in
+                            SessionRow(session: session) {
+                                store.clear(session)
+                            }
+                        }
                     }
                 }
+                .scrollIndicators(.automatic)
             }
 
             Spacer(minLength: 0)
@@ -125,8 +131,11 @@ struct MenuView: View {
             .padding(.vertical, 8)
         }
         .frame(width: Layout.width)
-        .frame(minHeight: Layout.minHeight, alignment: .topLeading)
-        .frame(maxHeight: .infinity, alignment: .topLeading)
+        .frame(
+            minHeight: Layout.minHeight,
+            maxHeight: Layout.maxHeight,
+            alignment: .topLeading
+        )
         .onAppear { hooks.refresh() }
         .onDisappear { hooks.dismissSuccess() }
     }
