@@ -1,0 +1,63 @@
+name: Sync Homebrew tap
+
+# Mirror Casks/signal-agent.rb into thepranky/homebrew-signal so users can run:
+#   brew install --cask thepranky/signal/signal-agent
+# without an explicit tap URL. Edit the cask only in this repo; CI keeps the tap
+# in sync when Casks/ changes on master (typically after ./scripts/update-cask.sh).
+
+on:
+  push:
+    branches: [master]
+    paths:
+      - "Casks/**"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  sync:
+    name: Push cask to homebrew-signal
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+
+      - name: Sync cask to homebrew-signal
+        env:
+          TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+        run: |
+          set -euo pipefail
+          if [ -z "${TAP_TOKEN}" ]; then
+            echo "::error::HOMEBREW_TAP_TOKEN is not set. Add a fine-grained or classic PAT with contents:write on thepranky/homebrew-signal."
+            exit 1
+          fi
+
+          git clone "https://x-access-token:${TAP_TOKEN}@github.com/thepranky/homebrew-signal.git" tap-repo
+
+          mkdir -p tap-repo/Casks
+          cp Casks/signal-agent.rb tap-repo/Casks/signal-agent.rb
+          rm -f tap-repo/Casks/signal.rb
+
+          cat > tap-repo/README.md <<'EOF'
+          # homebrew-signal
+
+          Homebrew tap for [Signal](https://github.com/thepranky/signal).
+
+          This repository is synced automatically from the main repo when
+          `Casks/signal-agent.rb` changes. Do not edit the cask here by hand.
+
+          ```bash
+          brew install --cask thepranky/signal/signal-agent
+          ```
+          EOF
+
+          cd tap-repo
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --staged --quiet; then
+            echo "Tap already up to date."
+            exit 0
+          fi
+          git commit -m "Sync signal-agent cask from thepranky/signal@${GITHUB_SHA::7}"
+          git push origin HEAD

@@ -1,6 +1,7 @@
 #!/usr/bin/env bash
 # Update Casks/signal-agent.rb to a released version by fetching its DMG and
-# recomputing the checksum. Run after a release is published:
+# recomputing the checksum. Run after a release is published, then commit and
+# push — CI syncs the cask to thepranky/homebrew-signal automatically.
 #
 #   ./scripts/update-cask.sh 0.1.6
 set -euo pipefail

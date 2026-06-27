@@ -49,11 +49,10 @@ To update, run the same command again.
 
 ## Install (Option 2: Homebrew)
 
-The cask is `signal-agent` (avoids colliding with Signal Messenger). Tap this
-repo by URL (Homebrew otherwise looks for a separate `homebrew-signal` mirror):
+The cask is `signal-agent` (avoids colliding with Signal Messenger):
 
 ```bash
-brew tap thepranky/signal https://github.com/thepranky/signal.git && brew install --cask thepranky/signal/signal-agent
+brew install --cask thepranky/signal/signal-agent
 ```
 
 Same setup step in the menu. To update: `brew upgrade --cask signal-agent`.
@@ -63,7 +62,7 @@ If you previously installed the old `signal` cask, switch over:
 ```bash
 brew uninstall --cask signal 2>/dev/null
 brew untap thepranky/signal 2>/dev/null
-brew tap thepranky/signal https://github.com/thepranky/signal.git && brew install --cask thepranky/signal/signal-agent
+brew install --cask thepranky/signal/signal-agent
 ```
 
 ## Install (Option 3: download)
@@ -164,6 +163,16 @@ CI runs these on every push and before every release.
   ```bash
   git tag v0.1.0 && git push origin v0.1.0
   ```
+  Then bump the cask and push — CI syncs it to the Homebrew tap automatically:
+  ```bash
+  ./scripts/update-cask.sh 0.1.0
+  git add Casks/signal-agent.rb && git commit -m "Bump Homebrew cask to v0.1.0."
+  git push origin master
+  ```
+  The tap mirror (`thepranky/homebrew-signal`) is updated by
+  `.github/workflows/sync-homebrew-tap.yml`. Set the `HOMEBREW_TAP_TOKEN` repo
+  secret (PAT with `contents:write` on `homebrew-signal`) and keep that mirror
+  repo **unarchived** so pushes succeed.
 
 ## Known limitations
 
@@ -198,7 +207,7 @@ signal/
 ├── scripts/install.sh       # one-line curl installer (no quarantine)
 ├── scripts/update-cask.sh   # bump the Homebrew cask after a release
 ├── Casks/signal-agent.rb    # Homebrew cask (tap this repo directly)
-├── .github/workflows/       # CI build + tagged releases
+├── .github/workflows/       # CI, releases, Homebrew tap sync
 ├── README.md
 └── LICENSE
 ```
