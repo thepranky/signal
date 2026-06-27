@@ -2,7 +2,7 @@
 
 A lightweight macOS menu bar app that monitors all your active **AI coding
 agent** sessions with a traffic-light system — across the Claude Code
-CLI, Claude desktop app, Cursor's agent, OpenAI Codex, and the VS Code extension, all at
+(CLI + Desktop), Cursor, OpenAI Codex, and the VS Code extensions, all at
 once. Each session shows an excerpt of its first prompt and a tag for the client
 it came from.
 
@@ -34,8 +34,7 @@ Plain JSON on disk — no daemon, no network.
 ## Requirements
 
 - macOS 13 or later.
-- [Claude Code](https://claude.com/claude-code), [Cursor](https://cursor.com),
-  and/or [Codex](https://developers.openai.com/codex) installed.
+- [Claude Code](https://claude.com/claude-code), [Cursor](https://cursor.com), and/or [Codex](https://developers.openai.com/codex) installed.
 
 ## Install (Option 1: one line — recommended)
 
@@ -49,8 +48,6 @@ launches it. Then click **Set up hooks** in the menu.
 To update, run the same command again.
 
 ## Install (Option 2: Homebrew)
-
-The cask is `signal-agent` (avoids colliding with Signal Messenger):
 
 ```bash
 brew install --cask thepranky/signal/signal-agent
@@ -85,7 +82,7 @@ Requires Xcode (not just Command Line Tools). Optionally run `./build-dmg.sh` to
 python3 install/install.py --dry-run
 ```
 
-### Uninstall
+## Uninstall
 
 To remove the app but leave hook settings in place:
 
@@ -133,9 +130,7 @@ uninstalling only ever removes Signal's own hooks.
 
 Signal installs hooks into Claude Code's global `~/.claude/settings.json`,
 Cursor's native `~/.cursor/hooks.json`, and Codex's user-level
-`~/.codex/hooks.json`, so it tracks the **terminal CLI, the VS Code extension,
-the Claude desktop app, Cursor's agent, and local Codex sessions**. Each session
-is shown with a short excerpt of its first prompt, plus a client tag:
+`~/.codex/hooks.json`:
 
 - **Claude** — the Claude Code CLI.
 - **Cursor** — Cursor's built-in agent.
@@ -143,12 +138,8 @@ is shown with a short excerpt of its first prompt, plus a client tag:
 - **VS Code** / **Claude Desktop** — detected from the transcript's
   `entrypoint` field.
 
-Cursor's hook events don't include a working directory, so Signal falls back to
-the workspace root (or the project encoded in the transcript path) to label them.
-
-Codex treats newly added user command hooks as untrusted until you review them.
-After clicking **Set up hooks**, open Codex and run `/hooks` if prompted, then
-trust Signal's hooks so Codex can run them.
+**Note**: Codex treats newly added user command hooks as untrusted until you review them.
+After clicking **Set up hooks**, open Codex and run `/hooks` if prompted, then press `t` to trust Signal's command hooks so Codex can run them.
 
 ## Configuration
 
