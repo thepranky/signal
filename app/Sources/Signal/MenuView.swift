@@ -58,16 +58,7 @@ final class HookState: ObservableObject {
     }
 }
 
-/// Reports a subview's height so the session list can be capped without clipping
-/// the fixed footer.
-private struct TopChromeHeightKey: PreferenceKey {
-    static var defaultValue: CGFloat = 0
-    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
-        value = nextValue()
-    }
-}
-
-private struct FooterHeightKey: PreferenceKey {
+private struct SessionListHeightKey: PreferenceKey {
     static var defaultValue: CGFloat = 0
     static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
         value = nextValue()
@@ -78,18 +69,38 @@ private struct FooterHeightKey: PreferenceKey {
 struct MenuView: View {
     @ObservedObject var store: SessionStore
     @StateObject private var hooks = HookState()
-    @State private var topChromeHeight: CGFloat = 58
-    @State private var footerHeight: CGFloat = 30
+    @State private var sessionListHeight: CGFloat = 0
 
     private enum Layout {
         static let width: CGFloat = 300
         static let maxHeight: CGFloat = 480
+        static let headerHeight: CGFloat = 59
+        static let footerHeight: CGFloat = 31
+        static let setupBannerHeight: CGFloat = 48
+        static let setupBannerWithErrorHeight: CGFloat = 72
+        static let hookSuccessHeight: CGFloat = 33
     }
 
-    /// Vertical space left for the session list once the measured header, optional
-    /// banner, and footer are accounted for.
-    private var sessionAreaMaxHeight: CGFloat {
-        max(0, Layout.maxHeight - topChromeHeight - footerHeight)
+    /// Fixed chrome above and below the session list for the current hook state.
+    private var chromeHeight: CGFloat {
+        var height = Layout.headerHeight + Layout.footerHeight
+        if !hooks.installed {
+            height += hooks.errorMessage != nil
+                ? Layout.setupBannerWithErrorHeight
+                : Layout.setupBannerHeight
+        } else if hooks.showSuccess {
+            height += Layout.hookSuccessHeight
+        }
+        return height
+    }
+
+    /// Scroll only when the full panel would exceed the max height.
+    private var needsScroll: Bool {
+        chromeHeight + sessionListHeight > Layout.maxHeight
+    }
+
+    private var sessionScrollHeight: CGFloat {
+        max(0, Layout.maxHeight - chromeHeight)
     }
 
     @ViewBuilder
@@ -99,6 +110,18 @@ struct MenuView: View {
                 SessionRow(session: session) {
                     store.clear(session)
                 }
+            }
+        }
+    }
+
+    @ViewBuilder
+    private func measuredSessionList() -> some View {
+        sessionList.background {
+            GeometryReader { proxy in
+                Color.clear.preference(
+                    key: SessionListHeightKey.self,
+                    value: proxy.size.height
+                )
             }
         }
     }
@@ -141,15 +164,13 @@ struct MenuView: View {
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, alignment: .center)
                 .padding(.vertical, 20)
-        } else {
-            ViewThatFits(in: .vertical) {
-                sessionList
-                ScrollView {
-                    sessionList
-                }
-                .scrollIndicators(.automatic)
+        } else if needsScroll {
+            ScrollView {
+                measuredSessionList()
             }
-            .frame(maxHeight: sessionAreaMaxHeight, alignment: .topLeading)
+            .frame(height: sessionScrollHeight, alignment: .topLeading)
+        } else {
+            measuredSessionList()
         }
     }
 
@@ -172,28 +193,12 @@ struct MenuView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             topChrome
-                .background {
-                    GeometryReader { proxy in
-                        Color.clear.preference(
-                            key: TopChromeHeightKey.self,
-                            value: proxy.size.height
-                        )
-                    }
-                }
             sessionArea
             footer
-                .background {
-                    GeometryReader { proxy in
-                        Color.clear.preference(
-                            key: FooterHeightKey.self,
-                            value: proxy.size.height
-                        )
-                    }
-                }
         }
         .frame(width: Layout.width, alignment: .topLeading)
-        .onPreferenceChange(TopChromeHeightKey.self) { topChromeHeight = $0 }
-        .onPreferenceChange(FooterHeightKey.self) { footerHeight = $0 }
+        .fixedSize(horizontal: false, vertical: true)
+        .onPreferenceChange(SessionListHeightKey.self) { sessionListHeight = $0 }
         .onAppear { hooks.refresh() }
         .onDisappear { hooks.dismissSuccess() }
     }
