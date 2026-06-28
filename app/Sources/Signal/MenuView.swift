@@ -67,6 +67,20 @@ struct MenuView: View {
         static let width: CGFloat = 300
         static let minHeight: CGFloat = 192
         static let maxHeight: CGFloat = 480
+        /// Header, footer, and dividers — used to cap the scroll area when there
+        /// are many sessions.
+        static let chromeHeight: CGFloat = 100
+    }
+
+    @ViewBuilder
+    private var sessionList: some View {
+        VStack(spacing: 0) {
+            ForEach(store.sessions) { session in
+                SessionRow(session: session) {
+                    store.clear(session)
+                }
+            }
+        }
     }
 
     var body: some View {
@@ -103,19 +117,14 @@ struct MenuView: View {
                     .frame(maxWidth: .infinity, alignment: .center)
                     .padding(.vertical, 20)
             } else {
-                ScrollView {
-                    LazyVStack(spacing: 0) {
-                        ForEach(store.sessions) { session in
-                            SessionRow(session: session) {
-                                store.clear(session)
-                            }
-                        }
+                ViewThatFits(in: .vertical) {
+                    sessionList
+                    ScrollView {
+                        sessionList
                     }
+                    .frame(maxHeight: Layout.maxHeight - Layout.chromeHeight)
                 }
-                .scrollIndicators(.automatic)
             }
-
-            Spacer(minLength: 0)
 
             Divider()
 
@@ -131,11 +140,9 @@ struct MenuView: View {
             .padding(.vertical, 8)
         }
         .frame(width: Layout.width)
-        .frame(
-            minHeight: Layout.minHeight,
-            maxHeight: Layout.maxHeight,
-            alignment: .topLeading
-        )
+        .fixedSize(horizontal: false, vertical: true)
+        .frame(minHeight: Layout.minHeight, alignment: .topLeading)
+        .frame(maxHeight: Layout.maxHeight, alignment: .topLeading)
         .onAppear { hooks.refresh() }
         .onDisappear { hooks.dismissSuccess() }
     }
