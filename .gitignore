@@ -1,6 +1,8 @@
 # Swift / SwiftPM
 app/.build/
 app/Signal.app/
+app/*.dmg
+app/*.zip
 *.xcodeproj
 .swiftpm/
 
