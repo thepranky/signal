@@ -25,5 +25,11 @@
     <!-- Menu bar agent: no Dock icon, no main window. -->
     <key>LSUIElement</key>
     <true/>
+    <key>SUFeedURL</key>
+    <string>https://github.com/thepranky/signal/releases/latest/download/appcast.xml</string>
+    <key>SUPublicEDKey</key>
+    <string>zdAHfusZyuzR3irl3v8zG3RFVIfouhDUVKlwIU7ji00=</string>
+    <key>SUEnableInstallerLauncherService</key>
+    <true/>
 </dict>
 </plist>

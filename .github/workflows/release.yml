@@ -18,10 +18,15 @@ jobs:
       - name: Verify Homebrew tap token
         env:
           TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
         run: |
           set -euo pipefail
           if [ -z "${TAP_TOKEN}" ]; then
             echo "::error::HOMEBREW_TAP_TOKEN is not set. Add a fine-grained or classic PAT with contents:write on thepranky/homebrew-signal."
+            exit 1
+          fi
+          if [ -z "${SPARKLE_PRIVATE_KEY}" ]; then
+            echo "::error::SPARKLE_PRIVATE_KEY is not set. Export the Sparkle EdDSA private key and add it as a repo secret."
             exit 1
           fi
       - name: Stamp version from tag
@@ -36,6 +41,10 @@ jobs:
       - name: Build DMG
         working-directory: app
         run: ./build-dmg.sh Signal-${{ github.ref_name }}.dmg
+      - name: Build Sparkle appcast
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+        run: scripts/make-appcast.sh "${GITHUB_REF_NAME#v}" "app/Signal-${GITHUB_REF_NAME}.dmg" app/appcast.xml
       - name: Zip app
         working-directory: app
         run: ditto -c -k --sequesterRsrc --keepParent Signal.app Signal-${{ github.ref_name }}.zip
@@ -45,6 +54,7 @@ jobs:
           files: |
             app/Signal-${{ github.ref_name }}.dmg
             app/Signal-${{ github.ref_name }}.zip
+            app/appcast.xml
           generate_release_notes: true
       - name: Sync Homebrew tap
         env:

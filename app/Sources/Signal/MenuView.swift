@@ -182,6 +182,7 @@ struct MenuView: View {
                 LegendDot(color: .yellow, text: "Waiting")
                 LegendDot(color: .green, text: "Done")
                 Spacer()
+                CheckForUpdatesButton()
                 QuitButton()
             }
             .font(.caption)
@@ -235,6 +236,28 @@ struct HookSuccessRow: View {
             .frame(maxWidth: .infinity, alignment: .leading)
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
+    }
+}
+
+struct CheckForUpdatesButton: View {
+    @State private var isHovered = false
+
+    var body: some View {
+        Button {
+            UpdateController.shared.checkForUpdates()
+        } label: {
+            Image(systemName: "arrow.triangle.2.circlepath")
+                .foregroundStyle(isHovered ? .primary : .secondary)
+                .frame(width: 18, height: 18)
+                .background(
+                    RoundedRectangle(cornerRadius: 4)
+                        .fill(Color.secondary.opacity(isHovered ? 0.16 : 0))
+                )
+        }
+        .buttonStyle(.plain)
+        .focusable(false)
+        .help("Check for Updates...")
+        .onHover { isHovered = $0 }
     }
 }
 

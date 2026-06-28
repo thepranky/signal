@@ -8,7 +8,7 @@ cask "signal-agent" do
   homepage "https://github.com/thepranky/signal"
 
   # Signal is ad-hoc signed, not notarized; let Homebrew clear quarantine.
-  auto_updates false
+  auto_updates true
   depends_on macos: :ventura
 
   app "Signal.app"

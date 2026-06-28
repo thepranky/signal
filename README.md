@@ -45,7 +45,8 @@ curl -fsSL https://raw.githubusercontent.com/thepranky/signal/master/scripts/ins
 This grabs the latest release, installs `Signal.app` into `/Applications`, and
 launches it. Then click **Set up hooks** in the menu.
 
-To update, run the same command again.
+Signal checks for app updates automatically. You can also click the refresh icon
+in the menu to check immediately.
 
 ## Install (Option 2: Homebrew)
 
@@ -53,7 +54,9 @@ To update, run the same command again.
 brew install --cask thepranky/signal/signal-agent
 ```
 
-Same setup step in the menu. To update: `brew upgrade --cask signal-agent`.
+Same setup step in the menu. Signal updates itself after install; you can still
+run `brew upgrade --cask signal-agent` if you prefer managing updates through
+Homebrew.
 
 ## Install (Option 3: download)
 
@@ -64,6 +67,10 @@ Same setup step in the menu. To update: `brew upgrade --cask signal-agent`.
    xattr -dr com.apple.quarantine /Applications/Signal.app
    ```
 4. Click the menu bar icon (top-right, near the clock) → **Set up hooks**.
+
+After the first install, Signal checks for updates in the background. When a new
+version is available, macOS shows a standard update prompt; click **Install and
+Relaunch** to finish.
 
 ## Install (Option 4: build from source)
 
@@ -177,16 +184,25 @@ CI runs these on every push and before every release.
   on a macOS runner for every push/PR, uploading the build as a downloadable
   artifact. This means neither maintainers nor users need Xcode locally.
 - **Release** (`.github/workflows/release.yml`) builds and attaches
-  `Signal-<tag>.zip` and `Signal-<tag>.dmg` to a GitHub Release whenever you
-  push a `v*` tag, then updates the Homebrew tap with the matching cask version
-  and DMG checksum, e.g.:
+  `Signal-<tag>.zip`, `Signal-<tag>.dmg`, and Sparkle's signed `appcast.xml` to
+  a GitHub Release whenever you push a `v*` tag, then updates the Homebrew tap
+  with the matching cask version and DMG checksum, e.g.:
   ```bash
   git tag v0.1.0 && git push origin v0.1.0
   ```
   Set the `HOMEBREW_TAP_TOKEN` repo secret (PAT with `contents:write` on
   `thepranky/homebrew-signal`) and keep that mirror repo **unarchived** so
-  pushes succeed. The separate `.github/workflows/sync-homebrew-tap.yml` workflow
-  only mirrors manual changes to `Casks/signal-agent.rb`.
+  pushes succeed. Set `SPARKLE_PRIVATE_KEY` to the private EdDSA key exported
+  by Sparkle's `generate_keys` tool; only the matching public key is committed
+  in `app/Resources/Info.plist`. The separate
+  `.github/workflows/sync-homebrew-tap.yml` workflow only mirrors manual changes
+  to `Casks/signal-agent.rb`.
+  ```bash
+  cd app
+  .build/artifacts/sparkle/Sparkle/bin/generate_keys --account dev.signal.claudemonitor -x /tmp/signal-sparkle-private-key
+  gh secret set SPARKLE_PRIVATE_KEY < /tmp/signal-sparkle-private-key
+  rm /tmp/signal-sparkle-private-key
+  ```
 
 ## Known limitations
 
@@ -195,8 +211,9 @@ CI runs these on every push and before every release.
   notarization requires a paid Apple Developer account and is intentionally not
   done; the auto-move-to-Applications step strips quarantine from the relocated
   copy to soften the rough edge.
-- **No auto-update.** Downloaded builds don't update themselves yet; grab new
-  releases manually (Sparkle integration is a future option).
+- **Update prompts are user-confirmed.** Signal checks for updates automatically
+  with Sparkle, but users still approve installation in the standard Sparkle
+  prompt before the app relaunches.
 - **Stale sessions can linger.** Without a heartbeat, Signal can't always tell
   an idle-but-alive session from a force-closed one, so dead sessions are pruned
   by a timeout rather than instantly. Normal Claude/Cursor exits remove their

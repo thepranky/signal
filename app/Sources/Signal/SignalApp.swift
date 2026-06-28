@@ -19,6 +19,7 @@ struct SignalApp: App {
 /// Hosts launch-time housekeeping that has no natural home in the SwiftUI scene.
 final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
+        _ = UpdateController.shared
         AppRelocator.offerMoveToApplicationsIfNeeded()
         LoginItem.offerIfNeeded()
     }
