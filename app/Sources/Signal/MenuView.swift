@@ -58,18 +58,38 @@ final class HookState: ObservableObject {
     }
 }
 
+/// Reports a subview's height so the session list can be capped without clipping
+/// the fixed footer.
+private struct TopChromeHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
+private struct FooterHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
 /// The panel shown when the menu bar item is clicked.
 struct MenuView: View {
     @ObservedObject var store: SessionStore
     @StateObject private var hooks = HookState()
+    @State private var topChromeHeight: CGFloat = 58
+    @State private var footerHeight: CGFloat = 30
 
     private enum Layout {
         static let width: CGFloat = 300
-        static let minHeight: CGFloat = 192
         static let maxHeight: CGFloat = 480
-        /// Header, footer, and dividers — used to cap the scroll area when there
-        /// are many sessions.
-        static let chromeHeight: CGFloat = 100
+    }
+
+    /// Vertical space left for the session list once the measured header, optional
+    /// banner, and footer are accounted for.
+    private var sessionAreaMaxHeight: CGFloat {
+        max(0, Layout.maxHeight - topChromeHeight - footerHeight)
     }
 
     @ViewBuilder
@@ -83,7 +103,8 @@ struct MenuView: View {
         }
     }
 
-    var body: some View {
+    @ViewBuilder
+    private var topChrome: some View {
         VStack(alignment: .leading, spacing: 0) {
             HStack(alignment: .bottom) {
                 VStack(alignment: .leading, spacing: 4) {
@@ -110,24 +131,31 @@ struct MenuView: View {
                 HookSuccessRow()
                 Divider()
             }
+        }
+    }
 
-            if store.sessions.isEmpty {
-                Text("No active sessions")
-                    .foregroundStyle(.secondary)
-                    .frame(maxWidth: .infinity, alignment: .center)
-                    .padding(.vertical, 20)
-            } else {
-                ViewThatFits(in: .vertical) {
+    @ViewBuilder
+    private var sessionArea: some View {
+        if store.sessions.isEmpty {
+            Text("No active sessions")
+                .foregroundStyle(.secondary)
+                .frame(maxWidth: .infinity, alignment: .center)
+                .padding(.vertical, 20)
+        } else {
+            ViewThatFits(in: .vertical) {
+                sessionList
+                ScrollView {
                     sessionList
-                    ScrollView {
-                        sessionList
-                    }
-                    .frame(maxHeight: Layout.maxHeight - Layout.chromeHeight)
                 }
+                .scrollIndicators(.automatic)
             }
+            .frame(maxHeight: sessionAreaMaxHeight, alignment: .topLeading)
+        }
+    }
 
+    private var footer: some View {
+        VStack(spacing: 0) {
             Divider()
-
             HStack(spacing: 12) {
                 LegendDot(color: .red, text: "Running")
                 LegendDot(color: .yellow, text: "Waiting")
@@ -139,10 +167,33 @@ struct MenuView: View {
             .padding(.horizontal, 12)
             .padding(.vertical, 8)
         }
-        .frame(width: Layout.width)
-        .fixedSize(horizontal: false, vertical: true)
-        .frame(minHeight: Layout.minHeight, alignment: .topLeading)
-        .frame(maxHeight: Layout.maxHeight, alignment: .topLeading)
+    }
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 0) {
+            topChrome
+                .background {
+                    GeometryReader { proxy in
+                        Color.clear.preference(
+                            key: TopChromeHeightKey.self,
+                            value: proxy.size.height
+                        )
+                    }
+                }
+            sessionArea
+            footer
+                .background {
+                    GeometryReader { proxy in
+                        Color.clear.preference(
+                            key: FooterHeightKey.self,
+                            value: proxy.size.height
+                        )
+                    }
+                }
+        }
+        .frame(width: Layout.width, alignment: .topLeading)
+        .onPreferenceChange(TopChromeHeightKey.self) { topChromeHeight = $0 }
+        .onPreferenceChange(FooterHeightKey.self) { footerHeight = $0 }
         .onAppear { hooks.refresh() }
         .onDisappear { hooks.dismissSuccess() }
     }
