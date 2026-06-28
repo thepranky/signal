@@ -185,8 +185,9 @@ CI runs these on every push and before every release.
   artifact. This means neither maintainers nor users need Xcode locally.
 - **Release** (`.github/workflows/release.yml`) builds and attaches
   `Signal-<tag>.zip`, `Signal-<tag>.dmg`, and Sparkle's signed `appcast.xml` to
-  a GitHub Release whenever you push a `v*` tag, then updates the Homebrew tap
-  with the matching cask version and DMG checksum, e.g.:
+  a GitHub Release whenever you push a `v*` tag, then updates this repo's
+  `Casks/signal-agent.rb` and the Homebrew tap with the matching cask version
+  and DMG checksum, e.g.:
   ```bash
   git tag v0.1.0 && git push origin v0.1.0
   ```

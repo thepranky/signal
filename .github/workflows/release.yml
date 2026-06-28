@@ -56,7 +56,7 @@ jobs:
             app/Signal-${{ github.ref_name }}.zip
             app/appcast.xml
           generate_release_notes: true
-      - name: Sync Homebrew tap
+      - name: Update Homebrew casks
         env:
           TAP_TOKEN: ${{ secrets.HOMEBREW_TAP_TOKEN }}
         run: |
@@ -64,10 +64,28 @@ jobs:
           VERSION="${GITHUB_REF_NAME#v}"
           SHA="$(shasum -a 256 "app/Signal-${GITHUB_REF_NAME}.dmg" | cut -d' ' -f1)"
 
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+          git fetch origin master
+          git worktree add -B update-cask repo-cask origin/master
+          (
+            cd repo-cask
+            scripts/write-cask.sh "$VERSION" "$SHA" Casks/signal-agent.rb
+
+            git add Casks/signal-agent.rb
+            if git diff --staged --quiet; then
+              echo "Repo cask already up to date."
+            else
+              git commit -m "Update signal-agent cask to v${VERSION}"
+              git push origin HEAD:master
+            fi
+          )
+
           git clone "https://x-access-token:${TAP_TOKEN}@github.com/thepranky/homebrew-signal.git" tap-repo
 
           mkdir -p tap-repo/Casks
-          scripts/write-cask.sh "$VERSION" "$SHA" tap-repo/Casks/signal-agent.rb
+          cp repo-cask/Casks/signal-agent.rb tap-repo/Casks/signal-agent.rb
           rm -f tap-repo/Casks/signal.rb
 
           cat > tap-repo/README.md <<'EOF'
