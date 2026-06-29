@@ -26,6 +26,7 @@ if [ -z "$SPARKLE_FRAMEWORK" ]; then
   exit 1
 fi
 cp -R "$SPARKLE_FRAMEWORK" "$APP/Contents/Frameworks/"
+install_name_tool -add_rpath "@executable_path/../Frameworks" "$APP/Contents/MacOS/Signal"
 
 # Ad-hoc sign the bundle. This is free (no Apple Developer account) and does NOT
 # notarize — Gatekeeper still warns on first launch — but a valid signature is
