@@ -84,8 +84,8 @@ struct MenuView: View {
     @ObservedObject var store: SessionStore
     @StateObject private var hooks = HookState()
     @State private var sessionListHeight: CGFloat = 0
-    @State private var topChromeHeight: CGFloat = Layout.defaultTopChromeHeight
-    @State private var footerHeight: CGFloat = Layout.defaultFooterHeight
+    @State private var topChromeHeight: CGFloat = 0
+    @State private var footerHeight: CGFloat = 0
 
     private enum Layout {
         static let width: CGFloat = 300
@@ -95,7 +95,8 @@ struct MenuView: View {
         static let maxVisibleSessions = 10
         static let estimatedTitledRowHeight: CGFloat = 46
         static let estimatedPlainRowHeight: CGFloat = 30
-        static let defaultTopChromeHeight: CGFloat = 59
+        static let defaultTopChromeWithDivider: CGFloat = 52
+        static let defaultTopChromeWithoutDivider: CGFloat = 46
         static let defaultFooterHeight: CGFloat = 31
     }
 
@@ -103,8 +104,18 @@ struct MenuView: View {
         !hooks.installed || hooks.showSuccess
     }
 
+    private var fallbackTopChromeHeight: CGFloat {
+        isSetupFlow ? Layout.defaultTopChromeWithoutDivider : Layout.defaultTopChromeWithDivider
+    }
+
+    private var hookLayoutKey: String {
+        if !hooks.installed { return "setup" }
+        if hooks.showSuccess { return "success" }
+        return "ready"
+    }
+
     private var chromeHeight: CGFloat {
-        let top = topChromeHeight > 0 ? topChromeHeight : Layout.defaultTopChromeHeight
+        let top = topChromeHeight > 0 ? topChromeHeight : fallbackTopChromeHeight
         let footer = footerHeight > 0 ? footerHeight : Layout.defaultFooterHeight
         return top + footer
     }
@@ -265,9 +276,13 @@ struct MenuView: View {
             }
         }
         .frame(width: Layout.width, height: panelHeight, alignment: .topLeading)
+        .id(hookLayoutKey)
         .onPreferenceChange(SessionListHeightKey.self) { sessionListHeight = $0 }
         .onPreferenceChange(TopChromeHeightKey.self) { topChromeHeight = $0 }
         .onPreferenceChange(FooterHeightKey.self) { footerHeight = $0 }
+        .onChange(of: isSetupFlow) { _ in
+            topChromeHeight = 0
+        }
         .onChange(of: store.sessions.count) { _ in
             sessionListHeight = 0
         }
