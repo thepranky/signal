@@ -92,7 +92,8 @@ struct MenuView: View {
         static let maxHeight: CGFloat = 480
         static let emptyStateHeight: CGFloat = 60
         static let maxVisibleSessions = 10
-        static let estimatedRowHeight: CGFloat = 38
+        static let estimatedTitledRowHeight: CGFloat = 46
+        static let estimatedPlainRowHeight: CGFloat = 30
         static let defaultTopChromeHeight: CGFloat = 59
         static let defaultFooterHeight: CGFloat = 31
     }
@@ -105,14 +106,21 @@ struct MenuView: View {
 
     /// Cap list growth at roughly ten session rows before scrolling.
     private var sessionListCap: CGFloat {
-        CGFloat(Layout.maxVisibleSessions) * Layout.estimatedRowHeight
+        CGFloat(Layout.maxVisibleSessions) * Layout.estimatedTitledRowHeight
+    }
+
+    private var estimatedSessionListHeight: CGFloat {
+        store.sessions.reduce(0) { total, session in
+            let hasTitle = !(session.title?.isEmpty ?? true)
+            return total + (hasTitle ? Layout.estimatedTitledRowHeight : Layout.estimatedPlainRowHeight)
+        }
     }
 
     private var naturalSessionListHeight: CGFloat {
         if sessionListHeight > 0 {
             return sessionListHeight
         }
-        return CGFloat(store.sessions.count) * Layout.estimatedRowHeight
+        return estimatedSessionListHeight
     }
 
     private var sessionAreaHeight: CGFloat {
@@ -139,18 +147,6 @@ struct MenuView: View {
                 SessionRow(session: session) {
                     store.clear(session)
                 }
-            }
-        }
-    }
-
-    @ViewBuilder
-    private func measuredSessionList() -> some View {
-        sessionList.background {
-            GeometryReader { proxy in
-                Color.clear.preference(
-                    key: SessionListHeightKey.self,
-                    value: proxy.size.height
-                )
             }
         }
     }
@@ -194,10 +190,10 @@ struct MenuView: View {
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         } else if needsScroll {
             ScrollView {
-                measuredSessionList()
+                sessionList
             }
         } else {
-            measuredSessionList()
+            sessionList
         }
     }
 
@@ -241,14 +237,28 @@ struct MenuView: View {
                     }
                 }
         }
+        .background(alignment: .topLeading) {
+            if !store.sessions.isEmpty {
+                sessionList
+                    .fixedSize(horizontal: false, vertical: true)
+                    .background {
+                        GeometryReader { proxy in
+                            Color.clear.preference(
+                                key: SessionListHeightKey.self,
+                                value: proxy.size.height
+                            )
+                        }
+                    }
+                    .hidden()
+                    .allowsHitTesting(false)
+            }
+        }
         .frame(width: Layout.width, height: panelHeight, alignment: .topLeading)
         .onPreferenceChange(SessionListHeightKey.self) { sessionListHeight = $0 }
         .onPreferenceChange(TopChromeHeightKey.self) { topChromeHeight = $0 }
         .onPreferenceChange(FooterHeightKey.self) { footerHeight = $0 }
         .onChange(of: store.sessions.count) { _ in
-            if store.sessions.isEmpty {
-                sessionListHeight = 0
-            }
+            sessionListHeight = 0
         }
         .onAppear { hooks.refresh() }
         .onDisappear { hooks.dismissSuccess() }
