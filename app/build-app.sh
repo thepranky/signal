@@ -18,6 +18,7 @@ cp "$BIN_PATH" "$APP/Contents/MacOS/Signal"
 cp Resources/Info.plist "$APP/Contents/Info.plist"
 # Bundle the hook script so the app can install hooks on first launch.
 cp ../hooks/signal_hook.py "$APP/Contents/Resources/signal_hook.py"
+cp ../install/install.py "$APP/Contents/Resources/install.py"
 cp Resources/AppIcon.icns "$APP/Contents/Resources/AppIcon.icns"
 
 SPARKLE_FRAMEWORK="$(find .build -path '*/Sparkle.framework' -type d | head -n 1)"

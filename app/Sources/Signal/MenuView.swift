@@ -26,7 +26,7 @@ struct MenuBarLabel: View {
 /// Tracks whether Signal's hooks are installed, for the setup banner.
 @MainActor
 final class HookState: ObservableObject {
-    @Published var installed: Bool = true
+    @Published var installed: Bool = false
     @Published var errorMessage: String?
     @Published var showSuccess: Bool = false
 
@@ -34,6 +34,10 @@ final class HookState: ObservableObject {
         HookInstaller.repairIfNeeded()
         installed = HookInstaller.isInstalled()
         if installed { errorMessage = nil }
+    }
+
+    init() {
+        refresh()
     }
 
     func install() {

@@ -118,6 +118,9 @@ enum HookInstaller {
     /// True when Signal is wired into every provider that appears to be present
     /// on this machine. Users may have any subset of Claude, Cursor, and Codex.
     static func isInstalled() -> Bool {
+        guard FileManager.default.fileExists(atPath: installedHookURL.path) else {
+            return false
+        }
         let checks: [() -> Bool] = [
             isProviderDirectoryPresent(claudeDirectoryURL) ? isClaudeInstalled : nil,
             isProviderDirectoryPresent(cursorDirectoryURL) ? isCursorInstalled : nil,
@@ -266,6 +269,9 @@ enum HookInstaller {
             var codex = try loadSettings(at: codexHooksURL)
             stripSignalHooks(&codex)
             try writeSettings(codex, to: codexHooksURL)
+        }
+        if FileManager.default.fileExists(atPath: installedHookURL.path) {
+            try? FileManager.default.removeItem(at: installedHookURL)
         }
     }
 

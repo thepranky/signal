@@ -13,6 +13,17 @@ cask "signal-agent" do
 
   app "Signal.app"
 
+  uninstall quit: "Signal"
+
+  uninstall_preflight do
+    uninstall_script = "#{appdir}/Signal.app/Contents/Resources/install.py"
+    if File.exist?(uninstall_script)
+      system_command "/usr/bin/python3",
+                     args:         [uninstall_script, "--uninstall"],
+                     must_succeed: false
+    end
+  end
+
   postflight do
     system_command "/usr/bin/xattr",
                    args:         ["-dr", "com.apple.quarantine", "#{appdir}/Signal.app"],

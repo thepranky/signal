@@ -37,6 +37,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         _ = UpdateController.shared
         AppRelocator.offerMoveToApplicationsIfNeeded()
+        HookSetup.offerIfNeeded()
         LoginItem.offerIfNeeded()
     }
 }

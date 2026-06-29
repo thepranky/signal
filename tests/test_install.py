@@ -176,6 +176,22 @@ class InstallerTestCase(unittest.TestCase):
         self.assertIn("echo keep-claude", str(claude))
         self.assertIn("echo keep-cursor", str(cursor))
         self.assertIn("echo keep-codex", str(codex))
+        self.assertFalse(os.path.exists(os.path.join(self.home, ".signal", "signal_hook.py")))
+
+    def test_uninstall_works_without_source_hook(self):
+        self.make_provider_dirs()
+        proc = self.run_installer()
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+
+        source_hook = os.path.join(REPO_ROOT, "hooks", "signal_hook.py")
+        backup = source_hook + ".testbak"
+        os.rename(source_hook, backup)
+        try:
+            proc = self.run_installer("--uninstall")
+            self.assertEqual(proc.returncode, 0, proc.stderr)
+            self.assertEqual(self.count_marker(self.read_json(self.cursor)), 0)
+        finally:
+            os.rename(backup, source_hook)
 
     def test_invalid_json_refuses_to_overwrite_any_settings(self):
         os.makedirs(os.path.dirname(self.claude), exist_ok=True)

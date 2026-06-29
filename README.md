@@ -92,28 +92,25 @@ python3 install/install.py --dry-run
 
 ## Uninstall
 
-To remove the app but leave hook settings in place:
+`brew uninstall --cask signal-agent` quits Signal, removes its hooks from Claude,
+Cursor, and Codex settings, then deletes the app. This leaves the rest of your
+agent settings untouched.
 
 ```bash
 pkill -x Signal 2>/dev/null || true
 brew uninstall --cask signal-agent
 ```
 
-To fully remove Signal, quit the running app first, then remove its hooks, the app, and
-local state:
+To also remove local session state:
 
 ```bash
-pkill -x Signal 2>/dev/null || true
-python3 install/install.py --uninstall
-brew uninstall --cask signal-agent
 rm -rf ~/.signal
 ```
 
-This removes only Signal's hooks and leaves the rest of your Claude Code,
-Cursor, and Codex settings untouched. If you installed from a DMG instead of
-Homebrew, delete `/Applications/Signal.app` in place of the `brew uninstall`
-command. If you enabled **Start at login**, also remove Signal under
-**System Settings → General → Login Items**.
+If you installed from a DMG instead of Homebrew, delete `/Applications/Signal.app`
+and run `python3 install/install.py --uninstall` from a clone of this repo (or use
+the bundled `Signal.app/Contents/Resources/install.py`). If you enabled **Start
+at login**, also remove Signal under **System Settings → General → Login Items**.
 
 ## Status mapping
 

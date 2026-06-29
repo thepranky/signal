@@ -204,7 +204,7 @@ def main() -> int:
                         help="print the resulting settings; write nothing")
     args = parser.parse_args()
 
-    if not os.path.exists(SOURCE_HOOK):
+    if not args.uninstall and not os.path.exists(SOURCE_HOOK):
         print(f"error: hook script not found at {SOURCE_HOOK}", file=sys.stderr)
         return 1
 
@@ -239,6 +239,8 @@ def main() -> int:
             # who never had one.
             if os.path.exists(CODEX_HOOKS_PATH):
                 write_settings(CODEX_HOOKS_PATH, codex)
+            if os.path.exists(INSTALLED_HOOK):
+                os.remove(INSTALLED_HOOK)
             print("Signal hooks removed.")
         return 0
 
