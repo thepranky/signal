@@ -9,6 +9,7 @@ struct SignalApp: App {
     var body: some Scene {
         MenuBarExtra {
             MenuView(store: store)
+                .id(store.sessions.map(\.id).joined(separator: "|"))
         } label: {
             MenuBarLabel(store: store)
         }
