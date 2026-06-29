@@ -329,6 +329,45 @@ class HookTestCase(unittest.TestCase):
         self.assertEqual(data["status"], "done")
         self.assertEqual(data["source"], "codex")
 
+    def test_codex_internal_memories_cwd_is_ignored_without_existing_state(self):
+        self.run_hook("running", {
+            "hook_event_name": "PreToolUse",
+            "session_id": "codex-memory",
+            "cwd": os.path.expanduser("~/.codex/memories"),
+        }, source="codex")
+        self.assertEqual(self.files(), [])
+
+    def test_codex_internal_memories_cwd_preserves_existing_project(self):
+        self.run_hook("running", {
+            "hook_event_name": "UserPromptSubmit",
+            "session_id": "codex-session-memory-update",
+            "cwd": "/Users/alice/projects/signal",
+        }, source="codex")
+
+        self.run_hook("waiting", {
+            "hook_event_name": "PermissionRequest",
+            "session_id": "codex-session-memory-update",
+            "cwd": os.path.expanduser("~/.codex/memories/extensions/ad_hoc"),
+        }, source="codex")
+
+        data = self.state("codex-session-memory-update")
+        self.assertEqual(data["status"], "waiting")
+        self.assertEqual(data["project"], "signal")
+        self.assertEqual(data["cwd"], "/Users/alice/projects/signal")
+        self.assertEqual(data["source"], "codex")
+
+    def test_codex_real_project_named_memories_is_tracked(self):
+        self.run_hook("running", {
+            "hook_event_name": "UserPromptSubmit",
+            "session_id": "codex-real-memories",
+            "cwd": "/Users/alice/projects/memories",
+        }, source="codex")
+
+        data = self.state("codex-real-memories")
+        self.assertEqual(data["project"], "memories")
+        self.assertEqual(data["cwd"], "/Users/alice/projects/memories")
+        self.assertEqual(data["source"], "codex")
+
     def test_title_unwraps_cursor_user_query(self):
         wrapped = ("<timestamp>Fri</timestamp>\n<user_query>\n"
                    "Make the button blue\n</user_query>")

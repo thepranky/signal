@@ -157,6 +157,18 @@ def first_workspace_root(event: dict) -> str:
     return ""
 
 
+def is_codex_internal_memory_cwd(cwd: str) -> bool:
+    """Return true for Codex's own memory store, not arbitrary memories repos."""
+    if not cwd:
+        return False
+    path = os.path.abspath(os.path.expanduser(cwd))
+    root = os.path.abspath(os.path.expanduser("~/.codex/memories"))
+    try:
+        return os.path.commonpath([path, root]) == root
+    except ValueError:
+        return False
+
+
 def _clean_title(text: str) -> str:
     """Turn a raw first-prompt string into a short, single-line label.
 
@@ -311,6 +323,16 @@ def main() -> int:
     transcript_path = event.get("transcript_path") or ""
     meta = read_transcript_meta(transcript_path)
     previous = read_existing_state(path)
+    source = session_source(transcript_path, meta["entrypoint"],
+                            is_cursor=bool(event.get("cursor_version")),
+                            forced_source=forced_source)
+    if source == "codex" and is_codex_internal_memory_cwd(cwd):
+        if not previous:
+            return 0
+        previous_cwd = previous.get("cwd")
+        if isinstance(previous_cwd, str) and previous_cwd:
+            cwd = previous_cwd
+
     previous_project = previous.get("project") if isinstance(previous.get("project"), str) else ""
     previous_title = previous.get("title") if isinstance(previous.get("title"), str) else ""
     project = (previous_project if previous_project and previous_project != "unknown"
@@ -322,9 +344,7 @@ def main() -> int:
         "title": meta["title"] or previous_title,
         "cwd": cwd,
         "transcript_path": transcript_path,
-        "source": session_source(transcript_path, meta["entrypoint"],
-                                 is_cursor=bool(event.get("cursor_version")),
-                                 forced_source=forced_source),
+        "source": source,
         "updated_at": time.time(),
     }
 
