@@ -270,6 +270,9 @@ struct MenuView: View {
             }
         }
         .frame(width: Layout.width, height: panelHeight, alignment: .topLeading)
+        .background {
+            MenuPanelWindowSizer(size: CGSize(width: Layout.width, height: panelHeight))
+        }
         .onPreferenceChange(SessionListHeightKey.self) { sessionListHeight = $0 }
         .onPreferenceChange(TopChromeHeightKey.self) { topChromeHeight = $0 }
         .onPreferenceChange(FooterHeightKey.self) { footerHeight = $0 }
@@ -282,6 +285,45 @@ struct MenuView: View {
         }
         .onAppear { hooks.refresh() }
         .onDisappear { hooks.dismissSuccess() }
+    }
+}
+
+/// MenuBarExtra's window style keeps the NSWindow at the largest size seen while
+/// the panel is open. SwiftUI's frame shrinks, but the native shell does not,
+/// until the menu is closed and reopened. Sync content size explicitly.
+private struct MenuPanelWindowSizer: NSViewRepresentable {
+    var size: CGSize
+
+    func makeNSView(context: Context) -> WindowSizeSyncView {
+        let view = WindowSizeSyncView()
+        view.contentSize = size
+        return view
+    }
+
+    func updateNSView(_ nsView: WindowSizeSyncView, context: Context) {
+        nsView.contentSize = size
+    }
+}
+
+private final class WindowSizeSyncView: NSView {
+    var contentSize: CGSize = .zero {
+        didSet { syncWindowSize() }
+    }
+
+    override func viewDidMoveToWindow() {
+        super.viewDidMoveToWindow()
+        syncWindowSize()
+    }
+
+    private func syncWindowSize() {
+        guard let window,
+              contentSize.width > 0,
+              contentSize.height > 0 else { return }
+        let target = NSSize(width: contentSize.width, height: contentSize.height)
+        let current = window.contentLayoutRect.size
+        if abs(current.width - target.width) > 0.5 || abs(current.height - target.height) > 0.5 {
+            window.setContentSize(target)
+        }
     }
 }
 
