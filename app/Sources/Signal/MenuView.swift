@@ -199,6 +199,7 @@ struct MenuView: View {
         }
         .frame(width: Layout.width, alignment: .topLeading)
         .fixedSize(horizontal: false, vertical: true)
+        .frame(maxHeight: Layout.maxHeight, alignment: .topLeading)
         .onPreferenceChange(SessionListHeightKey.self) { sessionListHeight = $0 }
         .onAppear { hooks.refresh() }
         .onDisappear { hooks.dismissSuccess() }
