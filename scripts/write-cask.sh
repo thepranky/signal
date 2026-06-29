@@ -36,6 +36,9 @@ cask "signal-agent" do
     system_command "/usr/bin/xattr",
                    args:         ["-dr", "com.apple.quarantine", "#{appdir}/Signal.app"],
                    must_succeed: false
+    system_command "/usr/bin/open",
+                   args:         ["-a", "#{appdir}/Signal.app"],
+                   must_succeed: false
   end
 
   caveats <<~EOS

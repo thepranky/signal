@@ -54,7 +54,8 @@ in the menu to check immediately.
 brew install --cask thepranky/signal/signal-agent
 ```
 
-Same setup step in the menu. Signal updates itself after install; you can still
+This installs `Signal.app` into `/Applications` and launches it. Then click
+**Set up hooks** in the menu. Signal updates itself after install; you can still
 run `brew upgrade --cask signal-agent` if you prefer managing updates through
 Homebrew.
 
