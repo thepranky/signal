@@ -91,11 +91,16 @@ struct MenuView: View {
         static let width: CGFloat = 300
         static let maxHeight: CGFloat = 480
         static let emptyStateHeight: CGFloat = 60
+        static let setupAreaHeight: CGFloat = 100
         static let maxVisibleSessions = 10
         static let estimatedTitledRowHeight: CGFloat = 46
         static let estimatedPlainRowHeight: CGFloat = 30
         static let defaultTopChromeHeight: CGFloat = 59
         static let defaultFooterHeight: CGFloat = 31
+    }
+
+    private var isSetupFlow: Bool {
+        !hooks.installed || hooks.showSuccess
     }
 
     private var chromeHeight: CGFloat {
@@ -124,6 +129,9 @@ struct MenuView: View {
     }
 
     private var sessionAreaHeight: CGFloat {
+        if isSetupFlow {
+            return Layout.setupAreaHeight
+        }
         if store.sessions.isEmpty {
             return Layout.emptyStateHeight
         }
@@ -170,13 +178,7 @@ struct MenuView: View {
             .padding(.top, 10)
             .padding(.bottom, 6)
 
-            Divider()
-
-            if !hooks.installed {
-                SetupBanner(hooks: hooks)
-                Divider()
-            } else if hooks.showSuccess {
-                HookSuccessRow()
+            if !isSetupFlow {
                 Divider()
             }
         }
@@ -184,7 +186,13 @@ struct MenuView: View {
 
     @ViewBuilder
     private var sessionArea: some View {
-        if store.sessions.isEmpty {
+        if isSetupFlow {
+            if hooks.showSuccess {
+                HookSuccessRow()
+            } else {
+                SetupBanner(hooks: hooks)
+            }
+        } else if store.sessions.isEmpty {
             Text("No active sessions")
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
@@ -226,7 +234,10 @@ struct MenuView: View {
                     }
                 }
             sessionArea
-                .frame(height: sessionAreaHeight, alignment: .topLeading)
+                .frame(
+                    height: sessionAreaHeight,
+                    alignment: isSetupFlow ? .center : .topLeading
+                )
             footer
                 .background {
                     GeometryReader { proxy in
@@ -271,7 +282,7 @@ struct SetupBanner: View {
     @ObservedObject var hooks: HookState
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 8) {
+        VStack(spacing: 8) {
             Button("Set up hooks") { hooks.install() }
                 .buttonStyle(.borderedProminent)
                 .controlSize(.small)
@@ -282,9 +293,8 @@ struct SetupBanner: View {
                     .fixedSize(horizontal: false, vertical: true)
             }
         }
-        .frame(maxWidth: .infinity, alignment: .leading)
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
         .padding(.horizontal, 12)
-        .padding(.vertical, 10)
     }
 }
 
@@ -293,9 +303,8 @@ struct HookSuccessRow: View {
         Label("Hooks installed", systemImage: "checkmark.circle.fill")
             .font(.caption.weight(.semibold))
             .foregroundStyle(.green)
-            .frame(maxWidth: .infinity, alignment: .leading)
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
             .padding(.horizontal, 12)
-            .padding(.vertical, 8)
     }
 }
 
