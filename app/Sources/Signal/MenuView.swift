@@ -82,7 +82,7 @@ private struct FooterHeightKey: PreferenceKey {
 /// The panel shown when the menu bar item is clicked.
 struct MenuView: View {
     @ObservedObject var store: SessionStore
-    @StateObject private var hooks = HookState()
+    @ObservedObject var hooks: HookState
     @State private var sessionListHeight: CGFloat = 0
     @State private var topChromeHeight: CGFloat = 0
     @State private var footerHeight: CGFloat = 0
@@ -106,12 +106,6 @@ struct MenuView: View {
 
     private var fallbackTopChromeHeight: CGFloat {
         isSetupFlow ? Layout.defaultTopChromeWithoutDivider : Layout.defaultTopChromeWithDivider
-    }
-
-    private var hookLayoutKey: String {
-        if !hooks.installed { return "setup" }
-        if hooks.showSuccess { return "success" }
-        return "ready"
     }
 
     private var chromeHeight: CGFloat {
@@ -276,12 +270,12 @@ struct MenuView: View {
             }
         }
         .frame(width: Layout.width, height: panelHeight, alignment: .topLeading)
-        .id(hookLayoutKey)
         .onPreferenceChange(SessionListHeightKey.self) { sessionListHeight = $0 }
         .onPreferenceChange(TopChromeHeightKey.self) { topChromeHeight = $0 }
         .onPreferenceChange(FooterHeightKey.self) { footerHeight = $0 }
         .onChange(of: isSetupFlow) { _ in
             topChromeHeight = 0
+            footerHeight = 0
         }
         .onChange(of: store.sessions.count) { _ in
             sessionListHeight = 0
