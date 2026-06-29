@@ -65,42 +65,71 @@ private struct SessionListHeightKey: PreferenceKey {
     }
 }
 
+private struct TopChromeHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
+private struct FooterHeightKey: PreferenceKey {
+    static var defaultValue: CGFloat = 0
+    static func reduce(value: inout CGFloat, nextValue: () -> CGFloat) {
+        value = nextValue()
+    }
+}
+
 /// The panel shown when the menu bar item is clicked.
 struct MenuView: View {
     @ObservedObject var store: SessionStore
     @StateObject private var hooks = HookState()
     @State private var sessionListHeight: CGFloat = 0
+    @State private var topChromeHeight: CGFloat = Layout.defaultTopChromeHeight
+    @State private var footerHeight: CGFloat = Layout.defaultFooterHeight
 
     private enum Layout {
         static let width: CGFloat = 300
         static let maxHeight: CGFloat = 480
-        static let headerHeight: CGFloat = 59
-        static let footerHeight: CGFloat = 31
-        static let setupBannerHeight: CGFloat = 48
-        static let setupBannerWithErrorHeight: CGFloat = 72
-        static let hookSuccessHeight: CGFloat = 33
+        static let emptyStateHeight: CGFloat = 60
+        static let maxVisibleSessions = 10
+        static let estimatedRowHeight: CGFloat = 38
+        static let defaultTopChromeHeight: CGFloat = 59
+        static let defaultFooterHeight: CGFloat = 31
     }
 
-    /// Fixed chrome above and below the session list for the current hook state.
     private var chromeHeight: CGFloat {
-        var height = Layout.headerHeight + Layout.footerHeight
-        if !hooks.installed {
-            height += hooks.errorMessage != nil
-                ? Layout.setupBannerWithErrorHeight
-                : Layout.setupBannerHeight
-        } else if hooks.showSuccess {
-            height += Layout.hookSuccessHeight
+        let top = topChromeHeight > 0 ? topChromeHeight : Layout.defaultTopChromeHeight
+        let footer = footerHeight > 0 ? footerHeight : Layout.defaultFooterHeight
+        return top + footer
+    }
+
+    /// Cap list growth at roughly ten session rows before scrolling.
+    private var sessionListCap: CGFloat {
+        CGFloat(Layout.maxVisibleSessions) * Layout.estimatedRowHeight
+    }
+
+    private var naturalSessionListHeight: CGFloat {
+        if sessionListHeight > 0 {
+            return sessionListHeight
         }
-        return height
+        return CGFloat(store.sessions.count) * Layout.estimatedRowHeight
     }
 
-    /// Scroll only when the full panel would exceed the max height.
+    private var sessionAreaHeight: CGFloat {
+        if store.sessions.isEmpty {
+            return Layout.emptyStateHeight
+        }
+        return min(naturalSessionListHeight, sessionListCap)
+    }
+
     private var needsScroll: Bool {
-        chromeHeight + sessionListHeight > Layout.maxHeight
+        guard !store.sessions.isEmpty else { return false }
+        return naturalSessionListHeight > sessionListCap
     }
 
-    private var sessionScrollHeight: CGFloat {
-        max(0, Layout.maxHeight - chromeHeight)
+    /// Explicit panel height so the MenuBarExtra window matches content exactly.
+    private var panelHeight: CGFloat {
+        min(chromeHeight + sessionAreaHeight, Layout.maxHeight)
     }
 
     @ViewBuilder
@@ -162,13 +191,11 @@ struct MenuView: View {
         if store.sessions.isEmpty {
             Text("No active sessions")
                 .foregroundStyle(.secondary)
-                .frame(maxWidth: .infinity, alignment: .center)
-                .padding(.vertical, 20)
+                .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .center)
         } else if needsScroll {
             ScrollView {
                 measuredSessionList()
             }
-            .frame(height: sessionScrollHeight, alignment: .topLeading)
         } else {
             measuredSessionList()
         }
@@ -194,12 +221,35 @@ struct MenuView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 0) {
             topChrome
+                .background {
+                    GeometryReader { proxy in
+                        Color.clear.preference(
+                            key: TopChromeHeightKey.self,
+                            value: proxy.size.height
+                        )
+                    }
+                }
             sessionArea
+                .frame(height: sessionAreaHeight, alignment: .topLeading)
             footer
+                .background {
+                    GeometryReader { proxy in
+                        Color.clear.preference(
+                            key: FooterHeightKey.self,
+                            value: proxy.size.height
+                        )
+                    }
+                }
         }
-        .frame(width: Layout.width, alignment: .topLeading)
-        .fixedSize(horizontal: false, vertical: true)
+        .frame(width: Layout.width, height: panelHeight, alignment: .topLeading)
         .onPreferenceChange(SessionListHeightKey.self) { sessionListHeight = $0 }
+        .onPreferenceChange(TopChromeHeightKey.self) { topChromeHeight = $0 }
+        .onPreferenceChange(FooterHeightKey.self) { footerHeight = $0 }
+        .onChange(of: store.sessions.count) { _ in
+            if store.sessions.isEmpty {
+                sessionListHeight = 0
+            }
+        }
         .onAppear { hooks.refresh() }
         .onDisappear { hooks.dismissSuccess() }
     }

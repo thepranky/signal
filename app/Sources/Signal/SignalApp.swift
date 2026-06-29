@@ -9,11 +9,16 @@ struct SignalApp: App {
     var body: some Scene {
         MenuBarExtra {
             MenuView(store: store)
-                .id(store.sessions.map(\.id).joined(separator: "|"))
+                .id(menuLayoutKey(for: store))
         } label: {
             MenuBarLabel(store: store)
         }
         .menuBarExtraStyle(.window)
+    }
+
+    /// Forces MenuBarExtra to remeasure when session count or membership changes.
+    private func menuLayoutKey(for store: SessionStore) -> String {
+        "\(store.sessions.count)|\(store.sessions.map(\.id).joined(separator: "|"))"
     }
 }
 
