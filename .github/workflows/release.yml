@@ -110,4 +110,6 @@ jobs:
             exit 0
           fi
           git commit -m "Update signal-agent cask to v${VERSION}"
-          git push origin HEAD:main
+          # Push with an explicit PAT URL. actions/checkout leaves a GITHUB_TOKEN
+          # auth header that overrides credentials embedded in origin's URL.
+          git push "https://x-access-token:${TAP_TOKEN}@github.com/thepranky/homebrew-signal.git" HEAD:main

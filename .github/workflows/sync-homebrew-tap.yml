@@ -4,7 +4,8 @@ name: Sync Homebrew tap
 #   brew install --cask thepranky/signal/signal-agent
 # without an explicit tap URL. Edit the cask only in this repo; CI keeps the tap
 # in sync when Casks/ changes on master. Tagged releases update both this repo's
-# cask and the tap directly from .github/workflows/release.yml.
+# cask and the tap directly from .github/workflows/release.yml; if that tap
+# push fails, this workflow also runs on the release cask commit as a fallback.
 
 on:
   push:
@@ -20,7 +21,6 @@ jobs:
   sync:
     name: Push cask to homebrew-signal
     runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'workflow_dispatch' || !startsWith(github.event.head_commit.message, 'Update signal-agent cask to v') }}
     steps:
       - uses: actions/checkout@v7
 
@@ -62,4 +62,4 @@ jobs:
             exit 0
           fi
           git commit -m "Sync signal-agent cask from thepranky/signal@${GITHUB_SHA::7}"
-          git push origin HEAD:main
+          git push "https://x-access-token:${TAP_TOKEN}@github.com/thepranky/homebrew-signal.git" HEAD:main
